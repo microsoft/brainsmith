@@ -61,3 +61,14 @@ evaluate_onnx_accuracy.py
 ```
 
 Once your QONNX model is validated, you can use this as an input to the BERT Brainsmith example.
+
+
+
+## Building the example design
+
+To build a 6-Layer bert model with brainsmith for the V80 use the following command
+
+```bash
+python bert_demo.py -m <onnx model filename> -o bert_demo_build --blueprint blueprints/l6_bert_demo.yaml
+```
+

@@ -16,7 +16,7 @@ finn_config:
    ['bert', 'bert.encoder', 'bert.encoder.layer.0']
   ]
   standalone_thresholds: true
-  folding_config_file: "${BSMITH_DIR}/examples/bert_training/l6_initial_folding.json"
+  folding_config_file: "${BSMITH_DIR}/examples/bert_training/configs/mlo_high_folding.json"
   split_large_fifos: true
   auto_fifo_depths: true
   fifosim_n_inferences: 2         # Speed up FIFO sizing
