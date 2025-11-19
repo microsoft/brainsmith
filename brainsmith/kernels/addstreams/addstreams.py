@@ -88,7 +88,7 @@ class AddStreams(KernelOp):
 
     @classmethod
     def infer_from(
-        cls, node: NodeProto, model: ModelWrapper, insert_index: int
+        cls, node: NodeProto, model: ModelWrapper, insert_index: int, kernel_index: int = None
     ) -> df.TransformationResult:
         """Create AddStreams HW node from ONNX Add node.
 
@@ -98,18 +98,20 @@ class AddStreams(KernelOp):
             node: ONNX Add node to convert
             model: ModelWrapper for graph access
             insert_index: Where to insert new nodes (unused - no layout conversion)
+            kernel_index: Sequential index for this kernel type (for naming)
 
         Returns:
             TransformationResult with AddStreams node and removed Add node
         """
-        # Create AddStreams HW node
+        # Create AddStreams HW node with sequential naming
+        node_name = f"AddStreams_{kernel_index}" if kernel_index is not None else f"AddStreams_{node.name}"
         hw_node = helper.make_node(
             "AddStreams",
             inputs=list(node.input),
             outputs=list(node.output),
             domain="brainsmith.kernels",
             backend="fpgadataflow",
-            name=f"AddStreams_{node.name}",
+            name=node_name,
         )
 
         return df.TransformationResult(

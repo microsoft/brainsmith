@@ -74,24 +74,31 @@ class Softmax(KernelOp):
 
     @classmethod
     def infer_from(
-        cls, node: NodeProto, model: ModelWrapper, insert_index: int
+        cls, node: NodeProto, model: ModelWrapper, insert_index: int, kernel_index: int = None
     ) -> df.TransformationResult:
         """Create Softmax Kernel node from ONNX Softmax node.
 
         NOTE: Softmax operates on the last dimension (axis=-1) and is layout-agnostic.
         However, the global normalize_dataflow_layouts preprocessing pass ensures
         inputs are in NHWC layout for consistency with other dataflow kernels.
+
+        Args:
+            node: ONNX Softmax node to convert
+            model: ModelWrapper for graph access
+            insert_index: Where to insert new nodes
+            kernel_index: Sequential index for this kernel type (for naming)
         """
         cls.build_schema(node, model)
 
-        # Create HW node
+        # Create HW node with sequential naming
+        node_name = f"Softmax_{kernel_index}" if kernel_index is not None else f"Softmax_{node.name}"
         hw_node = helper.make_node(
             "Softmax",
             inputs=list(node.input),
             outputs=list(node.output),
             domain="brainsmith.kernels",
             backend="fpgadataflow",
-            name=f"Softmax_{node.name}",
+            name=node_name,
         )
 
         return df.TransformationResult(nodes_to_insert=[hw_node], nodes_to_remove=[node])

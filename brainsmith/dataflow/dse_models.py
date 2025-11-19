@@ -66,6 +66,7 @@ class InterfaceDesignSpace:
         datatype: Interface datatype
         is_weight: Whether this is a weight tensor (constant)
         tensor_name: ONNX tensor name for initializer lookups
+        mem_mode: Memory mode for weight inputs (embedded/decoupled/dynamic)
         parallelism_dimension: OrderedParameter for stream parameter (None if no parallelism)
         parallelism_param: Parameter name for stream dimension (e.g., "SIMD", "PE")
     """
@@ -88,16 +89,18 @@ class InterfaceDesignPoint:
     """Interface instance with resolved parallelization.
 
     Flyweight pattern: references parent design space, stores only configuration-
-    specific stream_shape. Delegates tensor_shape, block_shape, and datatype
-    to design space for minimal memory overhead.
+    specific stream_shape and mem_mode. Delegates tensor_shape, block_shape, and
+    datatype to design space for minimal memory overhead.
 
     Attributes:
         design_space: Parent InterfaceDesignSpace
         stream_shape: Resolved stream dimensions for this configuration
+        mem_mode: Memory mode for weight inputs (embedded/decoupled/dynamic)
     """
 
     design_space: InterfaceDesignSpace
     stream_shape: Shape
+    mem_mode: str | None = None  # Memory mode (embedded/decoupled/dynamic) for weight inputs
 
     # Convenience properties (delegate to design space)
     @property
@@ -399,7 +402,7 @@ class KernelDesignSpace:
         from .template_resolution import resolve_template
 
         configured = {}
-        for interface in interfaces.values():
+        for idx, interface in enumerate(interfaces.values()):
             stream_shape = (
                 interface.block_shape
                 if interface.stream_tiling is None
@@ -413,8 +416,12 @@ class KernelDesignSpace:
                 )
             )
 
+            # Extract mem_mode from params if this is an input with mem_modes
+            mem_mode_param = f"input{idx}MemType"
+            mem_mode = params.get(mem_mode_param)
+
             configured_interface = InterfaceDesignPoint(
-                design_space=interface, stream_shape=stream_shape
+                design_space=interface, stream_shape=stream_shape, mem_mode=mem_mode
             )
             configured[interface.name] = configured_interface
             interface_lookup[interface.name] = configured_interface

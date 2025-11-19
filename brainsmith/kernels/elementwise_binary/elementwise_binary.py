@@ -181,48 +181,29 @@ def _elementwise_binary_output_datatype():
 
 
 def _validate_input_pattern(ctx):
-    """Validate input pattern and broadcasting compatibility.
+    """Validate input pattern based on weight status.
 
-    Supports two patterns:
-    - "dynamic_static": LHS dynamic, RHS static (Phase 1)
-    - "dynamic_dynamic": Both dynamic with broadcasting (Phase 2)
+    Validation rules (derived from mem_mode behavior):
+    - If RHS is weight: valid (dynamic_static or MLO dynamic_dynamic)
+    - If RHS is not weight: LHS also can't be weight (both streaming)
 
     Returns:
         None if valid, error message string if invalid
     """
-    input_pattern = ctx.param_getter("input_pattern")
+    if "lhs" not in ctx.inputs or "rhs" not in ctx.inputs:
+        return "Missing required inputs 'lhs' or 'rhs'"
 
-    # Validate pattern-specific constraints
-    if input_pattern == "dynamic_static":
-        # Phase 1: LHS dynamic, RHS static
-        if "lhs" not in ctx.inputs or "rhs" not in ctx.inputs:
-            return "Missing required inputs 'lhs' or 'rhs'"
+    lhs = ctx.inputs["lhs"]
+    rhs = ctx.inputs["rhs"]
 
-        lhs = ctx.inputs["lhs"]
-        rhs = ctx.inputs["rhs"]
+    # Simple validation: if RHS is not a weight, LHS can't be either
+    if not rhs.is_weight and lhs.is_weight:
+        return "LHS cannot be a weight when RHS is not a weight (invalid pattern)"
 
-        # RHS must be static (weight)
-        if not rhs.is_weight:
-            return "RHS must be static (initializer) for dynamic_static pattern"
-
-    elif input_pattern == "dynamic_dynamic":
-        # Phase 2: Both dynamic, must be broadcastable
-        if "lhs" not in ctx.inputs or "rhs" not in ctx.inputs:
-            return "Missing required inputs 'lhs' or 'rhs'"
-
-        lhs = ctx.inputs["lhs"]
-        rhs = ctx.inputs["rhs"]
-
-        # Both must be dynamic (not weights)
-        if lhs.is_weight or rhs.is_weight:
-            return "Both inputs must be dynamic (not initializers) for dynamic_dynamic pattern"
-
-        # Shapes must be broadcastable (checked at design space build time)
-        # Note: BroadcastInfo.compute() will be called during HLS code generation
-        # to get detailed broadcasting metadata
-
-    else:
-        return f"Unknown input_pattern '{input_pattern}'. Expected 'dynamic_static' or 'dynamic_dynamic'"
+    # All valid cases:
+    # 1. RHS is weight, LHS is not → dynamic_static
+    # 2. RHS is weight (MLO context) → dynamic_dynamic
+    # 3. Neither is weight → dynamic_dynamic (both activations)
 
     return None
 
@@ -240,11 +221,13 @@ ELEMENTWISE_BINARY_SCHEMA = df.KernelSchema(
             name="rhs",
             # Note: Tiling is minimal for backward compatibility with Phase 1 (static)
             # For Phase 2 dynamic+dynamic, HLS backend will create streaming interface
-            # based on input_pattern parameter
+            # based on derived pattern from mem_mode
             block_tiling=[FULL_DIM],  # Full tensor (needed for shape inference)
             stream_tiling=["PE"],  # PE parallelism (used only if dynamic)
             datatype=VALUE_OPTIMIZED,  # Optimize from actual values
             required_layout=None,
+            # Memory modes for RHS - static capabilities (what CAN it be if weight)
+            mem_modes=frozenset({"embedded", "decoupled", "dynamic"}),  # All possible modes
         ),
     ],
     outputs=[
@@ -260,8 +243,6 @@ ELEMENTWISE_BINARY_SCHEMA = df.KernelSchema(
     kernel_params={
         # Operation type: matches ONNX op_type (from operations registry)
         "func": ("s", True, "Add", BinaryOperations.all_operation_names()),
-        # Input pattern: determines which inputs are streaming
-        "input_pattern": ("s", True, "dynamic_static", {"dynamic_static", "dynamic_dynamic"}),
         # Direction for BitShift operations (optional, only used when func="BitShift")
         "direction": (
             "s",
@@ -269,6 +250,10 @@ ELEMENTWISE_BINARY_SCHEMA = df.KernelSchema(
             "",  # Optional parameter
             {"LEFT", "RIGHT", ""},
         ),
+        # NOTE: input_pattern removed - now derived from rhs.mem_mode (single source of truth)
+        # Pattern derivation:
+        #   - mem_mode in ("embedded", "decoupled"): dynamic_static
+        #   - mem_mode == "dynamic" or None: dynamic_dynamic
     },
     # DSE PARAMETERS (explorable resource parameters)
     dse_parameters={
@@ -276,12 +261,7 @@ ELEMENTWISE_BINARY_SCHEMA = df.KernelSchema(
         "ram_style": df.ParameterSpec(
             name="ram_style", values={"auto", "distributed", "block", "ultra"}, default="auto"
         ),
-        # Memory mode for constant parameters
-        "mem_mode": df.ParameterSpec(
-            name="mem_mode",
-            values={"internal_embedded", "internal_decoupled"},
-            default="internal_embedded",
-        ),
+        # NOTE: mem_mode moved to interface-level (rhs.mem_modes) → generates input1MemType
     },
     constraints=[
         # Pattern-specific validation (dynamic vs static, broadcasting)
@@ -341,6 +321,37 @@ class ElementwiseBinaryOp(KernelOp):
         return ELEMENTWISE_BINARY_SCHEMA
 
     # ================================================================
+    # Derived Properties (Single Source of Truth)
+    # ================================================================
+
+    @property
+    def input_pattern(self) -> str | None:
+        """Derive input pattern from RHS memory mode (single source of truth).
+
+        Pattern derivation:
+        - mem_mode=None: dynamic_dynamic (both activations streaming)
+        - mem_mode="embedded"/"decoupled": dynamic_static (static weight)
+        - mem_mode="dynamic": dynamic_dynamic (weight from loop/MLO)
+
+        Returns:
+            "dynamic_static" or "dynamic_dynamic", or None if not yet configured
+        """
+        if not hasattr(self, 'design_point') or self.design_point is None:
+            return None  # Not yet configured
+
+        rhs_iface = self.design_point.inputs.get("rhs")
+        if rhs_iface is None:
+            return None
+
+        # Derive from mem_mode
+        if rhs_iface.mem_mode in ("embedded", "decoupled"):
+            return "dynamic_static"  # Static weight
+        elif rhs_iface.mem_mode == "dynamic" or rhs_iface.mem_mode is None:
+            return "dynamic_dynamic"  # Streaming (from loop or both activations)
+        else:
+            raise ValueError(f"Unknown mem_mode: {rhs_iface.mem_mode}")
+
+    # ================================================================
     # ONNX → KernelOp Inference (Unified System)
     # ================================================================
 
@@ -397,7 +408,7 @@ class ElementwiseBinaryOp(KernelOp):
 
     @classmethod
     def infer_from(
-        cls, node: NodeProto, model: ModelWrapper, insert_index: int
+        cls, node: NodeProto, model: ModelWrapper, insert_index: int, kernel_index: int = None
     ) -> TransformationResult:
         """Infer ElementwiseBinaryOp from ONNX binary operation.
 
@@ -409,6 +420,7 @@ class ElementwiseBinaryOp(KernelOp):
             node: ONNX node to transform
             model: ModelWrapper for accessing graph info
             insert_index: Index where to insert new node
+            kernel_index: Sequential index for this kernel type (for naming)
 
         Returns:
             TransformationResult with new HW node
@@ -432,14 +444,14 @@ class ElementwiseBinaryOp(KernelOp):
         static_dynamic_pair = find_static_dynamic_pair(node.input, model)
         if static_dynamic_pair is not None:
             lhs_input, rhs_input = static_dynamic_pair  # (dynamic, static)
-            input_pattern = "dynamic_static"
+            # Pattern will be derived from mem_mode: "dynamic_static"
 
         else:
             # Try dynamic+dynamic pattern (Phase 2)
             dynamic_dynamic_pair = find_dynamic_dynamic_pair(node.input, model)
             if dynamic_dynamic_pair is not None:
                 lhs_input, rhs_input = dynamic_dynamic_pair  # Both dynamic
-                input_pattern = "dynamic_dynamic"
+                # Pattern will be derived from mem_mode: "dynamic_dynamic"
 
                 # Log broadcasting information for debugging
                 broadcast_info = get_broadcast_info(lhs_input, rhs_input, model)
@@ -455,17 +467,19 @@ class ElementwiseBinaryOp(KernelOp):
                     f"Expected either (dynamic, static) or (dynamic, dynamic) inputs."
                 )
 
-        # Create ElementwiseBinaryOp node with detected pattern
+        # Create ElementwiseBinaryOp node with sequential naming
+        # NOTE: input_pattern removed - now derived from rhs.mem_mode during design space building
+        node_name = f"ElementwiseBinaryOp_{kernel_index}" if kernel_index is not None else node.name
         hw_node = helper.make_node(
             "ElementwiseBinaryOp",
             inputs=[lhs_input, rhs_input],
             outputs=node.output,
-            name=node.name,
+            name=node_name,
             domain="brainsmith.kernels",
             backend="fpgadataflow",
             # Kernel parameters
             func=node.op_type,
-            input_pattern=input_pattern,  # NEW: Track which pattern is active
+            # input_pattern removed - derived from mem_mode
         )
 
         # Copy direction attribute for BitShift operations
@@ -483,6 +497,12 @@ class ElementwiseBinaryOp(KernelOp):
                 raise ValueError(
                     f"BitShift node {node.name} missing required 'direction' attribute"
                 )
+
+        # Mark RHS as weight if it's an initializer (for mem_mode parameter creation)
+        # Attribute presence indicates weight; absence indicates pure streaming input
+        rhs_input = hw_node.input[1]
+        if model.get_initializer(rhs_input) is not None:
+            hw_node.attribute.append(helper.make_attribute("input1MemType", "embedded"))
 
         # Copy metadata_props (e.g., PyTorch name scopes for loop rolling)
         # metadata_props is a protobuf RepeatedCompositeFieldContainer
@@ -645,10 +665,11 @@ class ElementwiseBinaryOp(KernelOp):
         Raises:
             ValueError: If shapes not broadcastable, with examples
         """
-        input_pattern = self.get_nodeattr("input_pattern")
+        # Use property to derive pattern from mem_mode
+        input_pattern = self.input_pattern
 
         if input_pattern != "dynamic_dynamic":
-            # Only validate for dynamic_dynamic pattern
+            # Only validate for dynamic_dynamic pattern (both inputs streaming)
             return
 
         if not hasattr(self, "design_point") or self.design_point is None:
@@ -806,23 +827,28 @@ class ElementwiseBinaryOp(KernelOp):
     def adapt_for_loop_body(self, loop_signature):
         """Adapt ElementwiseBinaryOp for use in FINNLoop body.
 
-        When used in MLO context, RHS parameters are streamed instead of being
-        constant initializers. This requires switching from dynamic_static to
-        dynamic_dynamic pattern.
+        Forces RHS memory mode to "dynamic" when weights are streamed from loop level.
+        Only modifies the attribute if:
+        1. RHS is marked as weight (attribute exists from InferKernel)
+        2. Loop signature indicates input is PARAMETER (streamed per iteration)
 
         Args:
-            loop_signature: Loop signature describing streaming parameters
+            loop_signature: List of LoopBodyInputType values for each input
         """
-        current_pattern = self.get_nodeattr("input_pattern")
+        from qonnx.util.basic import get_by_name
 
-        # If currently dynamic_static, switch to dynamic_dynamic for loop body
-        # (RHS becomes a streaming input instead of constant initializer)
-        if current_pattern == "dynamic_static":
-            logger.debug(
-                f"{self.onnx_node.name}: Adapting for loop body - "
-                f"switching input_pattern from 'dynamic_static' to 'dynamic_dynamic'"
-            )
-            self.set_nodeattr("input_pattern", "dynamic_dynamic")
+        # Check if RHS is marked as weight
+        attr = get_by_name(self.onnx_node.attribute, "input1MemType")
+        if attr is None:
+            return  # Not a weight, nothing to adapt
+
+        # Check if loop signature indicates this input is streamed as parameter
+        if loop_signature and len(loop_signature) > 1:
+            from finn.transformation.fpgadataflow.loop_rolling import LoopBodyInputType
+
+            if loop_signature[1] == LoopBodyInputType.PARAMETER:
+                self.set_nodeattr("input1MemType", "dynamic")
+                logger.debug(f"{self.onnx_node.name}: Forced input1MemType=dynamic for MLO")
 
     # ================================================================
     # ONNX Shape Compatibility

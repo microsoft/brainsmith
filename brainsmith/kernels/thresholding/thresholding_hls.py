@@ -27,7 +27,6 @@ from brainsmith.registry import backend
 
 
 @backend(
-    name="ThresholdingHLS",
     target_kernel="brainsmith:Thresholding",
     language="hls",
     description="HLS implementation of Thresholding",
@@ -41,19 +40,29 @@ class Thresholding_hls(Thresholding, HLSBackend):
 
     Key features:
     - Extracts shapes from design_point (not nodeattrs)
-    - Supports two memory modes:
-      * internal_embedded: Thresholds in thresh.h header
-      * internal_decoupled: Streaming thresholds via separate interface
-    - Optional runtime-writable weights (internal_decoupled mode)
+    - Supports three memory modes (via input1MemType DSE parameter):
+      * embedded: Thresholds in thresh.h header (compile-time constant)
+      * decoupled: Thresholds in separate memory, streamed via in1_V
+      * dynamic: Thresholds streamed from external source (MLO mode)
 
     Memory Modes:
-    - internal_embedded: Thresholds embedded in HLS (static, no AXI-lite)
-    - internal_decoupled: Thresholds streamed via in1_V interface
-      (optionally writable via AXI-lite if runtime_writeable_weights=1)
+    - embedded: Thresholds embedded in HLS code (smallest, fastest)
+    - decoupled: Thresholds in separate BRAM/LUT, streamed via in1_V
+    - dynamic: External streaming (MLO), no internal storage
     """
 
     def __init__(self, onnx_node, **kwargs):
         super().__init__(onnx_node, **kwargs)
+
+    def _get_mem_mode(self) -> str:
+        """Get memory mode from design point interface.
+
+        Returns:
+            Memory mode string: "embedded", "decoupled", or "dynamic"
+        """
+        thresholds_iface = self.design_point.inputs.get("thresholds")
+        return (thresholds_iface.mem_mode if thresholds_iface and thresholds_iface.mem_mode
+               else "embedded")
 
     def get_nodeattr_types(self):
         """Define nodeattrs for Thresholding_hls backend.
@@ -69,14 +78,8 @@ class Thresholding_hls(Thresholding, HLSBackend):
         # Add HLS-specific nodeattrs
         my_attrs.update(
             {
-                # Memory mode for thresholds
-                "mem_mode": (
-                    "s",
-                    False,
-                    "internal_decoupled",
-                    {"internal_embedded", "internal_decoupled"},
-                ),
-                # String defining memory type (for internal_embedded)
+                # Memory type for embedded mode (BRAM vs LUT)
+                # NOTE: mem_mode now comes from design point interface (input1MemType DSE param)
                 "ram_style": ("s", False, "distributed", {"distributed", "block"}),
             }
         )
@@ -120,7 +123,8 @@ class Thresholding_hls(Thresholding, HLSBackend):
         """Get maximum ap_int width needed."""
         ap_int_max_w = HLSBackend.get_ap_int_max_w(self)
 
-        if self.get_nodeattr("mem_mode") == "internal_decoupled":
+        # Decoupled and dynamic modes have streaming threshold interface
+        if self._get_mem_mode() in ("decoupled", "dynamic"):
             weightstream = self.get_instream_width(1)
             ap_int_max_w = max([weightstream, ap_int_max_w])
 
@@ -130,8 +134,8 @@ class Thresholding_hls(Thresholding, HLSBackend):
         """Generates c++ code and tcl script for ip generation."""
         super().code_generation_ipgen(model, fpgapart, clk)
 
-        mem_mode = self.get_nodeattr("mem_mode")
-        if mem_mode == "internal_decoupled":
+        # Decoupled and dynamic modes need memstream HDL
+        if self._get_mem_mode() in ("decoupled", "dynamic"):
             self.generate_hdl_memstream(fpgapart)
 
     def get_template_param_values(self):
@@ -259,26 +263,33 @@ class Thresholding_hls(Thresholding, HLSBackend):
         """Generate parameter files for HLS compilation."""
         code_gen_dir = path
         thresholds = model.get_initializer(self.onnx_node.input[1])
-        mem_mode = self.get_nodeattr("mem_mode")
+        mem_mode = self._get_mem_mode()
 
-        if mem_mode == "internal_embedded":
+        if mem_mode == "embedded":
             # Save thresholds in thresh.h
             weight_filename = f"{code_gen_dir}/thresh.h"
             self.make_weight_file(thresholds, "hls_header", weight_filename)
 
-        elif mem_mode == "internal_decoupled":
-            # Save internal_decoupled weights for cppsim
+        elif mem_mode == "decoupled":
+            # Save decoupled weights for cppsim
             weight_filename_sim = f"{code_gen_dir}/thresholds.npy"
             self.make_weight_file(thresholds, "decoupled_npy", weight_filename_sim)
 
             # Also save weights as Verilog .dat file
             weight_filename_rtl = f"{code_gen_dir}/memblock.dat"
             self.make_weight_file(thresholds, "decoupled_verilog_dat", weight_filename_rtl)
+        elif mem_mode == "dynamic":
+            # Dynamic mode: thresholds streamed from external source (MLO)
+            # No weight files needed - thresholds come from loop level
+            pass
         else:
-            raise Exception("Unrecognized mem_mode")
+            raise Exception(f"Unrecognized mem_mode: {mem_mode}")
 
     def execute_node(self, context, graph):
         """Execute node in cppsim or rtlsim mode."""
+        # Ensure design_space initialized (QONNX executor creates fresh instances)
+        self._ensure_initialized_for_execution(graph)
+
         mode = self.get_nodeattr("exec_mode")
         node = self.onnx_node
 
@@ -340,7 +351,9 @@ class Thresholding_hls(Thresholding, HLSBackend):
             inp = npy_to_rtlsim_input(f"{code_gen_dir}/input_0.npy", export_idt, nbits)
             super().reset_rtlsim(sim)
 
-            if self.get_nodeattr("mem_mode") == "internal_decoupled":
+            mem_mode = self._get_mem_mode()
+            # Decoupled and dynamic modes need threshold input
+            if mem_mode in ("decoupled", "dynamic"):
                 wnbits = self.get_instream_width(1)
                 export_wdt = self.get_input_datatype(1)
                 wei = npy_to_rtlsim_input(f"{code_gen_dir}/thresholds.npy", export_wdt, wnbits)
@@ -349,13 +362,13 @@ class Thresholding_hls(Thresholding, HLSBackend):
                     "inputs": {"in0": inp, "in1": wei * num_w_reps},
                     "outputs": {"out0": []},
                 }
-            elif self.get_nodeattr("mem_mode") == "internal_embedded":
+            elif mem_mode == "embedded":
                 io_dict = {
                     "inputs": {"in0": inp},
                     "outputs": {"out0": []},
                 }
             else:
-                raise Exception("Unrecognized mem_mode")
+                raise Exception(f"Unrecognized mem_mode: {mem_mode}")
 
             self.rtlsim_multi_io(sim, io_dict)
             super().close_rtlsim(sim)
@@ -381,7 +394,8 @@ class Thresholding_hls(Thresholding, HLSBackend):
         """Generate global include directives."""
         self.code_gen_dict["$GLOBALS$"] = ['#include "activations.hpp"']
 
-        if self.get_nodeattr("mem_mode") == "internal_embedded":
+        # Only embedded mode includes thresh.h header
+        if self._get_mem_mode() == "embedded":
             self.code_gen_dict["$GLOBALS$"] += ['#include "thresh.h"']
 
     def defines(self, var):
@@ -399,7 +413,8 @@ class Thresholding_hls(Thresholding, HLSBackend):
                #define ImgDim1 {total_spatial_size}"""
         ]
 
-        if self.get_nodeattr("mem_mode") == "internal_decoupled":
+        # Decoupled and dynamic modes need these defines for streaming interface
+        if self._get_mem_mode() in ("decoupled", "dynamic"):
             self.code_gen_dict["$DEFINES$"].append(
                 f"#define ActVal1 {self.get_nodeattr('act_val')}"
             )
@@ -428,8 +443,9 @@ class Thresholding_hls(Thresholding, HLSBackend):
             f'npy2apintstream<{packed_hls_type}, {elem_hls_type}, {elem_bits}, {npy_type}>("{npy_in}", in0_V, false);'
         )
 
-        mem_mode = self.get_nodeattr("mem_mode")
-        if mem_mode == "internal_decoupled":
+        mem_mode = self._get_mem_mode()
+        # Decoupled and dynamic modes need to read threshold data for cppsim
+        if mem_mode in ("decoupled", "dynamic"):
             tdt = self.get_input_datatype(1)
             elem_bits = tdt.bitwidth()
             packed_bits = self.get_instream_width(1)
@@ -453,8 +469,9 @@ class Thresholding_hls(Thresholding, HLSBackend):
             f'hls::stream<ap_uint<{self.get_outstream_width()}>> out0_V ("out0_V");'
         )
 
-        mem_mode = self.get_nodeattr("mem_mode")
-        if mem_mode == "internal_decoupled":
+        # Decoupled and dynamic modes have threshold streaming interface
+        mem_mode = self._get_mem_mode()
+        if mem_mode in ("decoupled", "dynamic"):
             self.code_gen_dict["$STREAMDECLARATIONS$"].append(
                 f'hls::stream<ap_uint<{self.get_instream_width(1)}>> in1_V ("in1_V");'
             )
@@ -462,21 +479,21 @@ class Thresholding_hls(Thresholding, HLSBackend):
     def docompute(self):
         """Generate HLS docompute code."""
         tmpl_args = self.get_template_param_values()
-        mem_mode = self.get_nodeattr("mem_mode")
+        mem_mode = self._get_mem_mode()
 
-        if mem_mode == "internal_embedded":
+        if mem_mode == "embedded":
             self.code_gen_dict["$DOCOMPUTE$"] = [
                 f"""Thresholding_Batch<ImgDim1, NumChannels1, PE1, {tmpl_args['TSrcI']}, {tmpl_args['TDstI']}>
                 (in0_V, out0_V, threshs, numReps);"""
             ]
-        elif mem_mode == "internal_decoupled":
+        elif mem_mode in ("decoupled", "dynamic"):
             # Note: numReps is set to 1, repetition comes from threshold stream
             self.code_gen_dict["$DOCOMPUTE$"] = [
                 f"""Thresholding_Stream_Batch<ImgDim1, NumChannels1, PE1, {tmpl_args['TSrcI']}, {tmpl_args['TDstI']}, ActVal1, ThresType1, NumSteps1>
                 (in0_V, out0_V, in1_V, numReps);"""
             ]
         else:
-            raise Exception("Unrecognized mem_mode")
+            raise Exception(f"Unrecognized mem_mode: {mem_mode}")
 
     def dataoutstrm(self):
         """Generate code for output stream."""
@@ -503,13 +520,15 @@ class Thresholding_hls(Thresholding, HLSBackend):
 
     def blackboxfunction(self):
         """Generate black box function signature."""
-        if self.get_nodeattr("mem_mode") == "internal_embedded":
+        mem_mode = self._get_mem_mode()
+
+        if mem_mode == "embedded":
             self.code_gen_dict["$BLACKBOXFUNCTION$"] = [
                 f"""void {self.onnx_node.name}(hls::stream<ap_uint<{self.get_instream_width(0)}>> &in0_V,
                     hls::stream<ap_uint<{self.get_outstream_width()}>> &out0_V
                     )"""
             ]
-        elif self.get_nodeattr("mem_mode") == "internal_decoupled":
+        elif mem_mode in ("decoupled", "dynamic"):
             self.code_gen_dict["$BLACKBOXFUNCTION$"] = [
                 f"""void {self.onnx_node.name}(hls::stream<ap_uint<{self.get_instream_width(0)}>> &in0_V,
                     hls::stream<ap_uint<{self.get_instream_width(1)}>> &in1_V,
@@ -517,7 +536,7 @@ class Thresholding_hls(Thresholding, HLSBackend):
                     )"""
             ]
         else:
-            raise Exception("Unrecognized mem_mode")
+            raise Exception(f"Unrecognized mem_mode: {mem_mode}")
 
     def pragmas(self):
         """Generate HLS pragmas."""
@@ -525,7 +544,8 @@ class Thresholding_hls(Thresholding, HLSBackend):
         self.code_gen_dict["$PRAGMAS$"].append("#pragma HLS INTERFACE axis port=out0_V")
         self.code_gen_dict["$PRAGMAS$"].append("#pragma HLS INTERFACE ap_ctrl_none port=return")
 
-        if self.get_nodeattr("mem_mode") == "internal_embedded":
+        mem_mode = self._get_mem_mode()
+        if mem_mode == "embedded":
             # Threshold tensor is acc_type [PE][TMEM][N_THRES]
             # Partition for parallel access along PE and N_THRES dimensions (dims 1 and 3)
             self.code_gen_dict["$PRAGMAS$"].append(
@@ -559,7 +579,7 @@ class Thresholding_hls(Thresholding, HLSBackend):
                         f"Invalid ram_style: {ram_style}. Must be 'block' or 'distributed'"
                     )
 
-        elif self.get_nodeattr("mem_mode") == "internal_decoupled":
+        elif mem_mode in ("decoupled", "dynamic"):
             self.code_gen_dict["$PRAGMAS$"].append("#pragma HLS INTERFACE axis port=in1_V")
 
     def code_generation_ipi(self):
@@ -567,12 +587,11 @@ class Thresholding_hls(Thresholding, HLSBackend):
         source_target = f"./ip/verilog/rtl_ops/{self.onnx_node.name}"
         cmd = [f"file mkdir {source_target}"]
 
-        # Add streamer if needed (internal_decoupled mode)
-        mem_mode = self.get_nodeattr("mem_mode")
+        # Add streamer if needed (decoupled/dynamic modes)
+        mem_mode = self._get_mem_mode()
 
-        if mem_mode == "internal_decoupled":
+        if mem_mode in ("decoupled", "dynamic"):
             node_name = self.onnx_node.name
-            runtime_writable = self.get_nodeattr("runtime_writeable_weights") == 1
 
             # Create hierarchy for this layer
             clk_name = self.get_verilog_top_module_intf_names()["clk"][0]
@@ -670,27 +689,15 @@ class Thresholding_hls(Thresholding, HLSBackend):
                 f"[get_bd_intf_pins {node_name}/{node_name}/{dout_name}]"
             )
 
-            if runtime_writable:
-                # Expose AXI lite interface for writable weights
-                axilite_name = self.get_verilog_top_module_intf_names()["axilite"][0]
-                cmd.append(
-                    f"create_bd_intf_pin -mode Slave "
-                    f"-vlnv xilinx.com:interface:aximm_rtl:1.0 /{node_name}/{axilite_name}"
-                )
-                cmd.append(
-                    f"connect_bd_intf_net [get_bd_intf_pins {node_name}/{axilite_name}] "
-                    f"[get_bd_intf_pins {node_name}/{strm_inst}/{axilite_name}]"
-                )
-                cmd.append("assign_bd_address")
-
+            # Note: AXI-lite runtime-writeable weights removed for simplicity
             cmd.append("save_bd_design")
 
-        elif mem_mode == "internal_embedded":
-            # Base class impl sufficient for internal_embedded mode
+        elif mem_mode == "embedded":
+            # Base class impl sufficient for embedded mode
             return super().code_generation_ipi()
 
         else:
-            raise Exception("Unrecognized mem_mode for Thresholding")
+            raise Exception(f"Unrecognized mem_mode for Thresholding: {mem_mode}")
 
         return cmd
 
@@ -698,13 +705,8 @@ class Thresholding_hls(Thresholding, HLSBackend):
         """Get Verilog top module interface names."""
         intf_names = super().get_verilog_top_module_intf_names()
 
-        mem_mode = self.get_nodeattr("mem_mode")
-        if mem_mode == "internal_decoupled":
-            # Only expose axilite interface if runtime_writeable_weights is set
-            runtime_writable = self.get_nodeattr("runtime_writeable_weights") == 1
-            if runtime_writable:
-                intf_names["axilite"] = ["s_axilite"]
-
+        # Note: AXI-lite support for runtime-writeable weights removed for simplicity
+        # Decoupled and dynamic modes only expose streaming interfaces
         return intf_names
 
     def get_op_and_param_counts(self):
@@ -741,8 +743,9 @@ class Thresholding_hls(Thresholding, HLSBackend):
             "outputs": {"out0": []},
         }
 
-        mem_mode = self.get_nodeattr("mem_mode")
-        if mem_mode in ["internal_decoupled", "external"]:
+        mem_mode = self._get_mem_mode()
+        # Decoupled and dynamic modes have weight input
+        if mem_mode in ("decoupled", "dynamic", "external"):
             n_weight_inps = self.calc_tmem()
             num_w_reps = np.prod(self.get_nodeattr("num_input_vectors"))
             io_dict["inputs"]["in1"] = [0 for i in range(num_w_reps * n_weight_inps)]

@@ -13,6 +13,7 @@ import logging
 from typing import Any
 
 from finn.transformation.qonnx.convert_qonnx_to_finn import ConvertQONNXtoFINN
+from finn.transformation.streamline.round_thresholds import RoundAndClipThresholds
 from qonnx.transformation.fold_constants import FoldConstants
 from qonnx.transformation.general import (
     ApplyConfig,
@@ -39,7 +40,13 @@ from brainsmith.registry import step  # noqa: E402
 def qonnx_to_finn_step(model: Any, cfg: Any) -> Any:
     """Convert QONNX to FINN opset."""
 
-    for transform in [ExpandNorms(), FoldConstants(), ConvertDivToMul(), ConvertQONNXtoFINN()]:
+    for transform in [
+        ExpandNorms(),
+        FoldConstants(),
+        ConvertDivToMul(),
+        ConvertQONNXtoFINN(),
+        RoundAndClipThresholds(),
+    ]:
         model = model.transform(transform)
 
     return model

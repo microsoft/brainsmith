@@ -577,11 +577,17 @@ def make_multithreshold_model(
             helper.make_attribute("out_scale", float(out_scale)),
             helper.make_attribute("out_bias", float(out_bias)),
             helper.make_attribute("out_dtype", output_dtype),
+            helper.make_attribute("data_layout", "NHWC"),  # Input is in NHWC format
         ]
     )
 
-    # Generate evenly-spaced threshold values (sorted ascending)
-    thresh_vals = np.linspace(-10, 10, num_thresholds, dtype=np.float32)
+    # Generate evenly-spaced threshold values within input dtype range
+    # Use 80% of range to ensure values fit after rounding/clipping in FINN pipeline
+    # Round to integers so FINN's MinimizeAccumulatorWidth can validate them
+    inp_dt = DataType[input_dtype]
+    inp_min, inp_max = inp_dt.min(), inp_dt.max()
+    thresh_vals = np.linspace(inp_min * 0.8, inp_max * 0.8, num_thresholds, dtype=np.float32)
+    thresh_vals = np.round(thresh_vals).astype(np.float32)  # Round to integers
     thresh_vals = np.tile(thresh_vals, (channels, 1))  # Replicate for each channel
 
     # Create graph

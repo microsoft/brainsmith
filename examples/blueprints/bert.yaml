@@ -17,7 +17,7 @@ design_space:
     - Crop
     - Lookup
     - Softmax
-    - finn:Thresholding
+    - brainsmith:Thresholding
     - finn:MVAU
     # Infrastructure Kernels
     - DuplicateStreams

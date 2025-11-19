@@ -76,7 +76,7 @@ class LayerNorm(KernelOp):
 
     @classmethod
     def infer_from(
-        cls, node: NodeProto, model: ModelWrapper, insert_index: int
+        cls, node: NodeProto, model: ModelWrapper, insert_index: int, kernel_index: int = None
     ) -> df.TransformationResult:
         """Create LayerNorm HW node from FuncLayerNorm node.
 
@@ -84,6 +84,7 @@ class LayerNorm(KernelOp):
             node: FuncLayerNorm node
             model: ModelWrapper for graph access
             insert_index: Where to insert new nodes (unused - no layout conversion)
+            kernel_index: Sequential index for this kernel type (for naming)
 
         Returns:
             TransformationResult with LayerNorm node
@@ -95,14 +96,15 @@ class LayerNorm(KernelOp):
         # Pass along None case, handled by kernel schema default
         epsilon = epsilon_attr if epsilon_attr is None else epsilon_attr.f
 
-        # Create HW node
+        # Create HW node with sequential naming
+        node_name = f"LayerNorm_{kernel_index}" if kernel_index is not None else f"LayerNorm_{node.name}"
         hw_node = helper.make_node(
             "LayerNorm",
             inputs=list(node.input),
             outputs=list(node.output),
             domain="brainsmith.kernels",
             backend="fpgadataflow",
-            name=f"LayerNorm_{node.name}",
+            name=node_name,
             epsilon=epsilon,
         )
 

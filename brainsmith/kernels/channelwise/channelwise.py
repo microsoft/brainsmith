@@ -72,6 +72,7 @@ CHANNELWISE_SCHEMA = df.KernelSchema(
             block_tiling=[],  # No tiling (static data)
             stream_tiling=[],  # Not streamed
             datatype=VALUE_OPTIMIZED,  # Optimize from actual values
+            mem_modes=frozenset({"embedded"}),  # Only embedded mode (FINN parity)
         ),
     ],
     outputs=[
@@ -153,12 +154,18 @@ class ChannelwiseOp(KernelOp):
 
     @classmethod
     def infer_from(
-        cls, node: NodeProto, model: ModelWrapper, insert_index: int
+        cls, node: NodeProto, model: ModelWrapper, insert_index: int, kernel_index: int = None
     ) -> TransformationResult:
         """Infer ChannelwiseOp from ONNX Add/Mul/LessOrEqual/GreaterOrEqual.
 
         Uses helper functions to detect and reorder inputs to canonical
         (dynamic, static) order before creating HW node.
+
+        Args:
+            node: ONNX node to convert
+            model: ModelWrapper for graph access
+            insert_index: Where to insert new nodes
+            kernel_index: Sequential index for this kernel type (for naming)
         """
         # Detect and reorder inputs to (dynamic, static)
         pair = find_static_dynamic_pair(node.input, model)
@@ -177,12 +184,13 @@ class ChannelwiseOp(KernelOp):
             # Expand scalar to per-channel
             param_input = expand_scalar_to_channels(static_input, num_channels, model)
 
-        # Create ChannelwiseOp node in canonical order
+        # Create ChannelwiseOp node in canonical order with sequential naming
+        node_name = f"ChannelwiseOp_{kernel_index}" if kernel_index is not None else node.name
         hw_node = helper.make_node(
             "ChannelwiseOp",
             inputs=[dynamic_input, param_input],  # Canonical order
             outputs=node.output,
-            name=node.name,
+            name=node_name,
             domain="brainsmith.kernels",
             backend="fpgadataflow",
             # Kernel parameters (use ONNX op type directly)
@@ -284,3 +292,21 @@ class ChannelwiseOp(KernelOp):
             raise ValueError(f"Unknown func '{func}'")
 
         context[node.output[0]] = result.astype(np.float32)
+
+    # ================================================================
+    # MLO Loop Body Adaptation
+    # ================================================================
+
+    def adapt_for_loop_body(self, loop_signature):
+        """Adapt ChannelwiseOp for use in FINNLoop body.
+
+        ChannelwiseOp doesn't require adaptation - parameters remain static
+        even in MLO context. Unlike ElementwiseBinaryOp, there's no pattern
+        switching needed.
+
+        Args:
+            loop_signature: Loop signature describing streaming parameters (unused)
+        """
+        # No-op for ChannelwiseOp - parameters are always static
+        # This method exists for interface compatibility with FINNLoop
+        pass

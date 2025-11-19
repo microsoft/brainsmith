@@ -129,8 +129,14 @@ def specialize_to_backend(
             backend_names.append(backend_class_name)
             continue
 
-        # Try to find backend in registry
-        # Try common sources (brainsmith, finn, project)
+        # Use __registry_name__ if available (handles custom names from @backend decorator)
+        # Registry attaches this attribute for O(1 reverse lookup
+        if hasattr(backend_cls, "__registry_name__"):
+            backend_names.append(backend_cls.__registry_name__)
+            continue
+
+        # Fallback: Try to find backend in registry using class name
+        # This handles backends not yet registered or loaded dynamically
         found = False
         for source in ["brainsmith", "finn", "project"]:
             candidate_name = f"{source}:{backend_class_name}"

@@ -27,11 +27,10 @@ from brainsmith.registry import backend
 
 
 @backend(
-    name="ThresholdingRTL",
     target_kernel="brainsmith:Thresholding",
     language="rtl",
     description="RTL implementation of Thresholding",
-    author="Microsoft Corporation",
+    author="AMD FINN"
 )
 class Thresholding_rtl(Thresholding, RTLBackend):
     """RTL backend for Thresholding kernel (KernelOp-based).
@@ -90,9 +89,9 @@ class Thresholding_rtl(Thresholding, RTLBackend):
         odt = self.get_output_datatype()
         odt_bits = odt.bitwidth()
 
-        # Extract NumChannels from design_point (Arete principle)
+        # Extract NumChannels from design_point block_shape (channels before stream tiling)
         ki = self.design_point
-        t_channels = ki.inputs["input"].tensor_shape[-1]
+        t_channels = ki.inputs["input"].block_shape[-1]
 
         cf = t_channels / pe
         is_uniform = self.get_nodeattr("uniform_thres")
@@ -161,8 +160,8 @@ class Thresholding_rtl(Thresholding, RTLBackend):
         dat_files = []
         t_path = self.get_nodeattr("code_gen_dir_ipgen") if abspath else "."
         pe = self.get_nodeattr("PE")
-        output_data_type = self.get_nodeattr("output_dtype")
-        o_bitwidth = DataType[output_data_type].bitwidth()
+        odt = self.get_output_datatype(0)
+        o_bitwidth = odt.bitwidth()
 
         for stage in range(o_bitwidth):
             for pe_value in range(pe):
@@ -183,14 +182,14 @@ class Thresholding_rtl(Thresholding, RTLBackend):
         self.generate_params(model, t_path)
 
         bias = self.get_nodeattr("act_val")
-        output_data_type = self.get_nodeattr("output_dtype")
-        input_data_type = self.get_nodeattr("input_dtype")
-        o_bitwidth = DataType[output_data_type].bitwidth()
+        odt = self.get_output_datatype(0)
+        idt = self.get_input_datatype(0)
+        o_bitwidth = odt.bitwidth()
         pe = self.get_nodeattr("PE")
 
-        # Extract NumChannels from design_point (Arete principle)
+        # Extract NumChannels from design_point block_shape (channels before stream tiling)
         ki = self.design_point
-        num_channels = ki.inputs["input"].tensor_shape[-1]
+        num_channels = ki.inputs["input"].block_shape[-1]
 
         # RTL expects 2^N-1 thresholds, but narrow range quantization results in
         # one less threshold. Prepend a dummy threshold (minimal possible value
@@ -200,22 +199,17 @@ class Thresholding_rtl(Thresholding, RTLBackend):
         wdt = self.get_input_datatype(1)
 
         if expected_thresholds != n_thres_steps:
-            if DataType[output_data_type].signed():
+            if odt.signed():
                 bias = bias - 1
             else:
                 max_val = wdt.max()
-                if max_val <= DataType[input_data_type].max():
+                if max_val <= idt.max():
                     max_val = max_val + 1
                     # Increase wdt
                     if not wdt.signed():
                         wdt = DataType.get_smallest_possible(max_val)
                     else:
                         wdt = DataType.get_smallest_possible(-max_val - 1)
-
-        # If single threshold value found, set num_channels to PE
-        thresholds = model.get_initializer(self.onnx_node.input[1])
-        if thresholds.shape[0] == 1:
-            num_channels = pe
 
         code_gen_dict["$THRESHOLDS_PATH$"] = [f'"./{self.onnx_node.name}_"']
 
@@ -226,7 +220,7 @@ class Thresholding_rtl(Thresholding, RTLBackend):
         code_gen_dict["$TOP_MODULE$"] = code_gen_dict["$MODULE_NAME_AXI_WRAPPER$"]
 
         # Identify module variables
-        i_bitwidth = DataType[input_data_type].bitwidth()
+        i_bitwidth = idt.bitwidth()
 
         code_gen_dict["$N$"] = [str(2**o_bitwidth - 1)]  # Number of needed thresholds
         code_gen_dict["$WT$"] = [str(wdt.bitwidth())]  # Threshold precision
@@ -257,9 +251,8 @@ class Thresholding_rtl(Thresholding, RTLBackend):
             )
         code_gen_dict["$O_BITS$"] = [str(int(o_bits))]
 
-        # Runtime-writable weights
-        rt_weights = self.get_nodeattr("runtime_writeable_weights")
-        code_gen_dict["$USE_AXILITE$"] = [str(rt_weights)]
+        # Runtime-writable weights (AXI-lite support removed)
+        code_gen_dict["$USE_AXILITE$"] = ["0"]
 
         # Depth triggers and deep pipeline
         depth_trigger_uram = self.get_nodeattr("depth_trigger_uram")
@@ -442,12 +435,7 @@ class Thresholding_rtl(Thresholding, RTLBackend):
 
     def get_verilog_top_module_intf_names(self):
         """Get Verilog top module interface names."""
-        intf_names = super().get_verilog_top_module_intf_names()
-
-        if self.get_nodeattr("runtime_writeable_weights") == 1:
-            intf_names["axilite"] = ["s_axilite"]
-
-        return intf_names
+        return super().get_verilog_top_module_intf_names()
 
     def generate_params(self, model, path):
         """Generate parameter files for RTL compilation.
@@ -457,12 +445,10 @@ class Thresholding_rtl(Thresholding, RTLBackend):
             path: Output directory path
         """
         thresholds = model.get_initializer(self.onnx_node.input[1])
-        rt_weights = self.get_nodeattr("runtime_writeable_weights")
+        # Skip if no initializer (will be provided at runtime)
+        if thresholds is None:
+            return
         file_name = f"{path}/memblock.dat"
-
-        if rt_weights:
-            self.make_weight_file(thresholds, "decoupled_runtime", file_name)
-
         self.make_weight_file(thresholds, "internal_embedded", file_name)
 
     def make_weight_file(self, weights, weight_file_mode, weight_file_name):
@@ -480,13 +466,13 @@ class Thresholding_rtl(Thresholding, RTLBackend):
         thresholds = weights
         pe = self.get_nodeattr("PE")
 
-        # Extract NumChannels from design_point (Arete principle)
+        # Extract NumChannels from design_point block_shape (channels before stream tiling)
         ki = self.design_point
-        num_channels = ki.inputs["input"].tensor_shape[-1]
+        num_channels = ki.inputs["input"].block_shape[-1]
 
-        output_data_type = self.get_nodeattr("output_dtype")
-        o_bitwidth = DataType[output_data_type].bitwidth()
-        input_data_type = self.get_nodeattr("input_dtype")
+        odt = self.get_output_datatype(0)
+        idt = self.get_input_datatype(0)
+        o_bitwidth = odt.bitwidth()
 
         # RTL expects 2^N-1 thresholds, but narrow range quantization results in
         # one less threshold. Prepend/append dummy threshold and increase numSteps.
@@ -495,13 +481,13 @@ class Thresholding_rtl(Thresholding, RTLBackend):
         wdt = self.get_input_datatype(1)
 
         if expected_thresholds != n_thres_steps:
-            if DataType[output_data_type].signed():
+            if odt.signed():
                 min_val = wdt.min()
                 thresholds = np.insert(thresholds, 0, min_val, axis=1)
             else:
                 # Temporary fix for unsigned narrow quantization
                 max_val = wdt.max()
-                if max_val > DataType[input_data_type].max():
+                if max_val > idt.max():
                     thresholds = np.insert(thresholds, len(thresholds[0]), max_val, axis=1)
                 else:
                     max_val = max_val + 1
@@ -515,10 +501,9 @@ class Thresholding_rtl(Thresholding, RTLBackend):
             n_thres_steps += 1
 
         if weight_file_mode == "decoupled_runtime":
-            # If single threshold value found, broadcast
+            # If single threshold value found, tile to all channels (per-tensor quantization)
             if thresholds.shape[0] == 1:
-                thresholds = np.broadcast_to(thresholds, (pe, expected_thresholds))
-                num_channels = pe
+                thresholds = np.tile(thresholds, (num_channels, 1))
 
             width_padded = roundup_to_integer_multiple(thresholds.shape[1], 2**o_bitwidth)
             thresh_padded = np.zeros((thresholds.shape[0], width_padded))
@@ -551,15 +536,14 @@ class Thresholding_rtl(Thresholding, RTLBackend):
                     f.write(val + "\n")
 
         elif weight_file_mode == "internal_embedded":
+            # If single threshold value found, tile to all channels (per-tensor quantization)
+            if thresholds.shape[0] == 1:
+                thresholds = np.tile(thresholds, (num_channels, 1))
+
             # Add dummy dimension as final dimension (gets packed)
             t_expand = np.expand_dims(thresholds, axis=-1)
             bw_hexdigit = roundup_to_integer_multiple(wdt.bitwidth(), 4)
             t_packed = pack_innermost_dim_as_hex_string(t_expand, wdt, bw_hexdigit, prefix="")
-
-            # If single threshold value found, broadcast
-            if t_packed.shape[0] == 1:
-                t_packed = np.broadcast_to(t_packed, (pe, expected_thresholds))
-                num_channels = pe
 
             channel_fold = int(num_channels / pe)
 
