@@ -1,14 +1,13 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""Parallelization transformation steps.
-
-These steps provide drop-in replacements for FINN's parallelization pipeline,
-working with both legacy FINN HWCustomOp nodes and modern Brainsmith KernelOp nodes.
-
-The step layer focuses on extracting configuration from the build system (cfg),
-while ApplyParallelizationConfig and SetParallelization handle the actual logic.
 """
+Hardware Optimization Steps
+
+Hardware-specific optimizations including parallelization configuration,
+FPS-based auto-parallelization, folding constraints, and parameter exploration.
+"""
+
 import logging
 from typing import Any
 
@@ -19,9 +18,19 @@ from brainsmith.primitives.transforms.parallelization import (
     ApplyParallelizationConfig,
     SetParallelization,
 )
+from brainsmith.primitives.transforms.set_pumped_compute import SetPumpedCompute
+from brainsmith.primitives.transforms.temp_shuffle_fixer import TempShuffleFixer
 from brainsmith.registry import step
 
 logger = logging.getLogger(__name__)
+
+
+@step(name="constrain_folding_and_set_pumped_compute")
+def constrain_folding_and_set_pumped_compute_step(model, cfg):
+    """Apply optimizations including folding constraints and pumped compute."""
+    for transform in [TempShuffleFixer(), SetPumpedCompute()]:
+        model = model.transform(transform)
+    return model
 
 
 @step(name="apply_parallelization_config")
@@ -32,23 +41,6 @@ def apply_parallelization_config_step(model: Any, cfg: Any) -> Any:
     Works with both FINN HWCustomOp and Brainsmith KernelOp nodes.
 
     Config file path is read from cfg.folding_config_file (FINN convention).
-
-    Args:
-        model: ModelWrapper to transform
-        cfg: Build configuration with folding_config_file attribute
-
-    Returns:
-        ModelWrapper with parallelization applied
-
-    Example config format:
-        {
-            "Defaults": {
-                "PE": [1, ["all"]]
-            },
-            "MVAU_0": {"PE": 8, "SIMD": 4},
-            "LayerNorm_0": {"PE": 16},
-            "FINNLoop_0_MVAU_rtl_0": {"PE": 4, "SIMD": 2}  # Loop body node
-        }
     """
     config_file = getattr(cfg, "folding_config_file", None)
 
@@ -88,18 +80,6 @@ def target_fps_parallelization_step(model: Any, cfg: Any) -> Any:
 
     Target cycles are calculated from cfg.target_fps and cfg.synth_clk_period_ns:
         target_cycles = (1 / target_fps) / (clock_period_ns * 1e-9)
-
-    Args:
-        model: ModelWrapper to transform
-        cfg: Build configuration with target_fps and synth_clk_period_ns attributes
-
-    Returns:
-        ModelWrapper with parallelization optimized for target FPS
-
-    Example:
-        target_fps = 100 (frames per second)
-        synth_clk_period_ns = 5.0 (5ns clock = 200MHz)
-        target_cycles = 1e9 / (100 * 5.0) = 2,000,000 cycles per frame
     """
     target_fps = getattr(cfg, "target_fps", None)
 
@@ -111,8 +91,6 @@ def target_fps_parallelization_step(model: Any, cfg: Any) -> Any:
     clock_period_ns = getattr(cfg, "synth_clk_period_ns", 5.0)
 
     # Calculate target cycles from FPS
-    # Cycles = (1 second / target_fps) / clock_period
-    # Convert to integer cycles
     target_cycles = int(1e9 / (target_fps * clock_period_ns))
 
     logger.debug(
@@ -146,4 +124,24 @@ def target_fps_parallelization_step(model: Any, cfg: Any) -> Any:
         loop_body = loop_body.transform(GiveUniqueNodeNames(prefix=node.name + "_"))
         node_inst.set_nodeattr("body", loop_body.graph)
 
+    return model
+
+
+@step(name="explore_kernel_params")
+def explore_kernel_params_step(model, cfg):
+    """Parameter exploration for design space exploration (DSE).
+    
+    Explores different parallelization configurations to find optimal
+    hardware resource utilization and performance trade-offs.
+    """
+    # Import here to avoid circular dependency
+    from brainsmith.primitives.transforms.parameter_exploration import ExploreKernelParams
+    
+    if not hasattr(cfg, 'param_exploration_config'):
+        logger.warning("No param_exploration_config specified, skipping parameter exploration")
+        return model
+    
+    logger.debug("Running parameter exploration...")
+    model = model.transform(ExploreKernelParams(cfg.param_exploration_config))
+    
     return model

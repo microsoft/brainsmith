@@ -5,6 +5,7 @@
 BERT-Specific Custom Build Steps
 
 Custom steps specifically for BERT model processing, including:
+- Model-specific topology preprocessing
 - Head and tail removal for model decomposition
 - Metadata extraction for shell integration
 - Reference I/O generation for validation
@@ -20,6 +21,7 @@ from typing import Any
 
 # Import decorator for registration
 from brainsmith.registry import step
+from brainsmith.primitives.transforms.expand_norms import ExpandNorms
 from brainsmith.primitives.transforms.extract_shell_integration_metadata import ExtractShellIntegrationMetadata
 from qonnx.transformation.general import SortCommutativeInputsInitializerLast, GiveUniqueNodeNames
 from qonnx.transformation.remove import RemoveIdentityOps
@@ -40,6 +42,16 @@ from finn.transformation.streamline.collapse_repeated import CollapseRepeatedMul
 logger = logging.getLogger(__name__)
 
 # === Pre-Processing ===
+
+@step(name="bert_topology_cleanup")
+def bert_topology_cleanup_step(model: Any, cfg: Any) -> Any:
+    """Model-specific topology preprocessing.
+
+    Decomposes transformer-specific operations into functional primitives
+    before quantization import and FINN topology cleanup.
+    """
+    model = model.transform(ExpandNorms())
+    return model
 
 @step(name='bert_cleanup')
 def bert_cleanup_step(model: Any, cfg: Any) -> Any:

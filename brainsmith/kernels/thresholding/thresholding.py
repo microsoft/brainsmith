@@ -31,7 +31,7 @@ from brainsmith.dataflow import FULL_DIM, KernelOp
 from brainsmith.dataflow.constraints import (
     IsDynamic,
 )
-from brainsmith.dataflow.spec_helpers import derive_dim, threshold_datatype
+from brainsmith.dataflow.spec_helpers import derive_dim
 from brainsmith.dataflow.types import ShapeHierarchy
 from brainsmith.registry import kernel
 
@@ -57,7 +57,7 @@ THRESHOLDING_SCHEMA = df.KernelSchema(
             # Not tiled or streamed - full tensor loaded as initializer
             block_tiling=[],  # No block tiling (static data)
             stream_tiling=[],  # Not streamed (static data)
-            datatype=threshold_datatype("input"),  # FINN-compatible: accommodates ceil() rounding
+            datatype=None,  # Read from graph (ImportQONNXQuantization already set it)
             mem_modes=frozenset({"embedded", "decoupled", "dynamic"}),  # All possible modes
         ),
     ],

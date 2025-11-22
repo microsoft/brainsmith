@@ -23,7 +23,9 @@ design_space:
     - DuplicateStreams
 
   steps:
-    - "qonnx_to_finn"
+    - "bert_topology_cleanup"              # Model-specific (ExpandNorms)
+    - "finn_topology_cleanup"              # Generic graph optimization
+    - "import_qonnx_quantization"          # Quantization metadata import
     - "bert_streamlining"
     - "normalize_dataflow_layouts"         # Normalize tensors to NHWC layout
     - "infer_computational_kernels"        # Infer pattern-based kernels (MVAU, LayerNorm, etc.)
