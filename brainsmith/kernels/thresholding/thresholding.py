@@ -77,7 +77,7 @@ THRESHOLDING_SCHEMA = df.KernelSchema(
         "num_steps": ("i", True, 1),  # Number of threshold steps (required)
         "act_val": ("i", False, 0),  # Activation bias value (ActVal)
         "num_input_vectors": ("ints", False, [1]),  # Batch/spatial dims (legacy)
-        # REMOVED: runtime_writeable_weights - AXI-lite support removed for simplicity
+        "runtime_writeable_weights": ("i", False, 0),  # Legacy FINN compat (always 0)
     },
     # =========================================================================
     # VALIDATION: Constraints

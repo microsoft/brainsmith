@@ -179,7 +179,10 @@ class Thresholding_rtl(Thresholding, RTLBackend):
         code_gen_dict = {}
         t_path = self.get_nodeattr("code_gen_dir_ipgen")
 
-        self.generate_params(model, t_path)
+        # For MLO nodes, thresholds are graph inputs (PARAMETERS), not initializers
+        # Skip generate_params as there are no initializers to process
+        if not self.get_nodeattr("mlo_max_iter"):
+            self.generate_params(model, t_path)
 
         bias = self.get_nodeattr("act_val")
         odt = self.get_output_datatype(0)
@@ -228,6 +231,13 @@ class Thresholding_rtl(Thresholding, RTLBackend):
         code_gen_dict["$C$"] = [str(num_channels)]  # Number of channels
         code_gen_dict["$BIAS$"] = [str(bias)]  # Activation bias value
         code_gen_dict["$PE$"] = [str(pe)]  # PE
+
+        # MLO support: Set SETS parameter based on mlo_max_iter
+        mlo_max_iter = self.get_nodeattr("mlo_max_iter")
+        if mlo_max_iter:
+            code_gen_dict["$SETS$"] = [str(mlo_max_iter)]
+        else:
+            code_gen_dict["$SETS$"] = [str(1)]
 
         # Is input datatype signed or unsigned?
         # Thresholding core needs to know this when comparing weights to inputs
