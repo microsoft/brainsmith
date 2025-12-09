@@ -11,8 +11,11 @@ FPS-based auto-parallelization, folding constraints, and parameter exploration.
 import logging
 from typing import Any
 
+from finn.transformation.fpgadataflow.minimize_accumulator_width import MinimizeAccumulatorWidth
+from finn.transformation.fpgadataflow.minimize_weight_bit_width import MinimizeWeightBitWidth
 from finn.util.basic import getHWCustomOp
 from qonnx.transformation.general import GiveUniqueNodeNames
+from qonnx.transformation.infer_datatypes import InferDataTypes
 
 from brainsmith.primitives.transforms.parallelization import (
     ApplyParallelizationConfig,
@@ -130,18 +133,67 @@ def target_fps_parallelization_step(model: Any, cfg: Any) -> Any:
 @step(name="explore_kernel_params")
 def explore_kernel_params_step(model, cfg):
     """Parameter exploration for design space exploration (DSE).
-    
+
     Explores different parallelization configurations to find optimal
     hardware resource utilization and performance trade-offs.
     """
     # Import here to avoid circular dependency
     from brainsmith.primitives.transforms.parameter_exploration import ExploreKernelParams
-    
+
     if not hasattr(cfg, 'param_exploration_config'):
         logger.warning("No param_exploration_config specified, skipping parameter exploration")
         return model
-    
+
     logger.debug("Running parameter exploration...")
     model = model.transform(ExploreKernelParams(cfg.param_exploration_config))
-    
+
+    return model
+
+
+@step(name="minimize_bit_width")
+def minimize_bit_width_step(model: Any, cfg: Any) -> Any:
+    """Tighten weight and accumulator bit widths for each layer.
+
+    Brainsmith version that skips RoundAndClipThresholds since it's
+    applied elsewhere in the Brainsmith build flow.
+
+    This step:
+    1. Minimizes weight bit widths (MinimizeWeightBitWidth)
+    2. Minimizes accumulator bit widths (MinimizeAccumulatorWidth)
+    3. Propagates datatype changes (InferDataTypes)
+
+    All transforms are applied to subgraphs (FINNLoop bodies) as well.
+
+    Args:
+        model: ModelWrapper containing the dataflow graph
+        cfg: Build configuration object
+
+    Returns:
+        Transformed model with minimized bit widths
+    """
+    # Check if bit width minimization is enabled in config
+    minimize_enabled = getattr(cfg, "minimize_bit_width", True)
+
+    if not minimize_enabled:
+        logger.info("Bit width minimization disabled in config")
+        return model
+
+    logger.info("Minimizing bit widths (weights, accumulators)")
+
+    # 1. Minimize weight bit widths
+    logger.debug("Running MinimizeWeightBitWidth...")
+    model = model.transform(MinimizeWeightBitWidth(), apply_to_subgraphs=True)
+
+    # 2. Minimize accumulator bit widths
+    logger.debug("Running MinimizeAccumulatorWidth...")
+    model = model.transform(MinimizeAccumulatorWidth(), apply_to_subgraphs=True)
+
+    # NOTE: RoundAndClipThresholds is applied elsewhere in Brainsmith flow
+
+    # 3. Propagate datatype changes through the network
+    logger.debug("Running InferDataTypes to propagate changes...")
+    model = model.transform(InferDataTypes(), apply_to_subgraphs=True)
+
+    logger.info("Bit width minimization complete")
+
     return model

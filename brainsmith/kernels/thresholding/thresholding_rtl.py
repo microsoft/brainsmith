@@ -422,7 +422,7 @@ class Thresholding_rtl(Thresholding, RTLBackend):
         else:
             raise Exception(f"Invalid exec_mode: {mode}. Must be 'cppsim' or 'rtlsim'")
 
-    def code_generation_ipi(self):
+    def code_generation_ipi(self, behavioral=False):
         """Constructs and returns TCL commands for node instantiation as RTL block."""
         rtl_file_list = self.get_rtl_file_list()
         code_gen_dir = self.get_nodeattr("code_gen_dir_ipgen")

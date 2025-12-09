@@ -78,8 +78,8 @@ fi
 # Define our Git dependencies - URLs and revisions
 declare -A GIT_DEPS=(
     ["brevitas"]="https://github.com/Xilinx/brevitas.git@c10ef8764967e9cacc60347ce185be14e4ad97c4"
-    ["qonnx"]="https://github.com/fastmachinelearning/qonnx.git@f2c4ccd3e71795c9f116ee5a0c87a7dfd590c6d0"
-    ["finn"]="https://github.com/tafk7/finn.git@feature/logging-integration-transformer"
+    ["qonnx"]="https://github.com/fastmachinelearning/qonnx.git@custom/brainsmith"
+    ["finn"]="https://github.com/tafk7/finn.git@feature/mlo-merge"
     ["finn-experimental"]="https://github.com/Xilinx/finn-experimental.git@0724be21111a21f0d81a072fccc1c446e053f851"
     ["dataset-loading"]="https://github.com/fbcotter/dataset_loading.git@0.0.4"
 )
@@ -129,12 +129,15 @@ resolve_ref_to_commit() {
     # Fetch latest from remote to ensure we have up-to-date refs
     git fetch origin --quiet 2>/dev/null || true
 
-    # First try to resolve as-is (works for local branches, tags, and hashes)
-    local resolved_commit=$(git rev-parse "$ref" 2>/dev/null || echo "")
+    local resolved_commit=""
 
-    # If that fails, try as a remote branch on origin
+    # For branch refs, always prefer origin's version to detect when local is behind
+    # Try origin/$ref first (remote branch)
+    resolved_commit=$(git rev-parse "origin/$ref" 2>/dev/null || echo "")
+
+    # If that fails, try as-is (works for tags and commit hashes)
     if [ -z "$resolved_commit" ]; then
-        resolved_commit=$(git rev-parse "origin/$ref" 2>/dev/null || echo "")
+        resolved_commit=$(git rev-parse "$ref" 2>/dev/null || echo "")
     fi
 
     # If still no luck, return "unknown"
@@ -275,7 +278,8 @@ update_repo() {
                 echo -e "    ${current_commit:0:8} → $rev (${expected_commit:0:8})"
                 cd "$name"
                 git fetch --all --quiet
-                git -c advice.detachedHead=false checkout "$rev" --quiet
+                # Checkout the resolved commit hash to ensure we get the remote version
+                git -c advice.detachedHead=false checkout "$expected_commit" --quiet
                 echo -e "    ${GREEN}✓${NC} Updated to $rev"
                 cd ..
                 return 0

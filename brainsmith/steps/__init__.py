@@ -37,6 +37,7 @@ from brainsmith.steps.hardware_optimization_steps import (
     apply_parallelization_config_step,
     target_fps_parallelization_step,
     explore_kernel_params_step,
+    minimize_bit_width_step,
 )
 
 # BERT-specific steps
@@ -64,6 +65,7 @@ __all__ = [
     'apply_parallelization_config_step',
     'target_fps_parallelization_step',
     'explore_kernel_params_step',
+    'minimize_bit_width_step',
     # BERT-specific
     'bert_topology_cleanup_step',
     'bert_cleanup_step',

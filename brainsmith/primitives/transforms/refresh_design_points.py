@@ -16,7 +16,6 @@ This transform serves two purposes:
 from qonnx.core.modelwrapper import ModelWrapper
 from qonnx.custom_op.registry import getCustomOp
 from qonnx.transformation.base import Transformation
-from qonnx.transformation.general import ApplyConfig
 
 from brainsmith.dataflow import KernelOp
 
@@ -187,6 +186,7 @@ def make_brainsmith_cleanup_pipeline():
     2. Refreshes all kernel instances
     3. Cleans up the graph
     """
+    from finn.transformation.general import ApplyConfig
     from qonnx.transformation.fold_constants import FoldConstants
     from qonnx.transformation.general import RemoveStaticGraphInputs, RemoveUnusedTensors
 

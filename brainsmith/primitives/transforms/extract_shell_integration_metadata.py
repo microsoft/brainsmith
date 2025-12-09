@@ -4,6 +4,7 @@
 """Shell integration metadata extraction transform."""
 
 import json
+import os
 
 import numpy as np
 from finn.util.mlo_sim import dat_file_to_numpy_array

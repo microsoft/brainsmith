@@ -582,7 +582,7 @@ class Thresholding_hls(Thresholding, HLSBackend):
         elif mem_mode in ("decoupled", "dynamic"):
             self.code_gen_dict["$PRAGMAS$"].append("#pragma HLS INTERFACE axis port=in1_V")
 
-    def code_generation_ipi(self):
+    def code_generation_ipi(self, behavioral=False):
         """Generate TCL commands for IPI integration."""
         source_target = f"./ip/verilog/rtl_ops/{self.onnx_node.name}"
         cmd = [f"file mkdir {source_target}"]
@@ -694,7 +694,7 @@ class Thresholding_hls(Thresholding, HLSBackend):
 
         elif mem_mode == "embedded":
             # Base class impl sufficient for embedded mode
-            return super().code_generation_ipi()
+            return super().code_generation_ipi(behavioral)
 
         else:
             raise Exception(f"Unrecognized mem_mode for Thresholding: {mem_mode}")
