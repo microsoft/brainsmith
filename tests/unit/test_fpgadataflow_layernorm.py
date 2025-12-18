@@ -22,7 +22,6 @@ from qonnx.transformation.infer_shapes import InferShapes
 from qonnx.util.basic import gen_finn_dt_tensor, qonnx_make_model
 from qonnx.transformation.infer_datatypes import InferDataTypes
 import finn.transformation.fpgadataflow.convert_to_hw_layers as to_hw
-from brainsmith.kernels.layernorm.infer_layernorm import InferLayerNorm
 from finn.transformation.fpgadataflow.compile_cppsim import CompileCppSim
 from finn.transformation.fpgadataflow.hlssynth_ip import HLSSynthIP
 from finn.transformation.fpgadataflow.prepare_cppsim import PrepareCppSim
@@ -35,17 +34,15 @@ from finn.transformation.fpgadataflow.create_stitched_ip import CreateStitchedIP
 from finn.transformation.fpgadataflow.create_dataflow_partition import (
     CreateDataflowPartition,
 )
-from brainsmith.transforms.cleanup.expand_norms import ExpandNorms
+from finn.transformation.streamline.extract_norm_scale_bias import ExtractNormScaleBias
 
 # Debugging dependencies, to remove
 import os
 
 from qonnx.transformation.fold_constants import FoldConstants
 
-from qonnx.transformation.general import (
-    ApplyConfig,
-    GiveUniqueNodeNames,
-)
+from qonnx.transformation.general import GiveUniqueNodeNames
+from finn.transformation.general import ApplyConfig
 
 import numpy as np
 
@@ -95,10 +92,10 @@ def test_fpgadataflow_layernorm():
 
     y_ref = oxe.execute_onnx(model, input_t)[model.graph.output[0].name]
 
-    model = model.transform(ExpandNorms())
+    model = model.transform(ExtractNormScaleBias())
     model = model.transform(InferShapes())
     model = model.transform(InferDataTypes())
-    model = model.transform(InferLayerNorm())
+    model = model.transform(to_hw.InferLayerNorm())
     model = model.transform(to_hw.InferElementwiseBinaryOperation())
     model = model.transform(SpecializeLayers(test_fpga_part))
     model = model.transform(GiveUniqueNodeNames())

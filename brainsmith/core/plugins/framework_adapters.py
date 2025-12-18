@@ -126,6 +126,9 @@ FINN_TRANSFORMS = [
     # Streamline collapse transforms
     ('CollapseRepeatedOp', f'{FT}.streamline.collapse_repeated.CollapseRepeatedOp'),
 
+    # Streamline extract scale bias transform
+    ('ExtractNormScaleBias', f'{FT}.streamline.extract_norm_scale_bias.ExtractNormScaleBias'),
+
     # Streamline reorder transforms
     ('MoveAddPastMul', f'{FT}.streamline.reorder.MoveAddPastMul'),
     ('MoveScalarMulPastMatMul', f'{FT}.streamline.reorder.MoveScalarMulPastMatMul'),
@@ -220,6 +223,8 @@ FINN_KERNELS = [
     ('Pool', f'{FK}.pool.Pool'),
     ('Lookup', f'{FK}.lookup.Lookup'),
     ('LabelSelect', f'{FK}.labelselect.LabelSelect'),
+    ('LayerNorm', f'{FK}.layernorm.LayerNorm'),
+    ('HWSoftmax', f'{FK}.hwsoftmax.HWSoftmax'),
     ('AddStreams', f'{FK}.addstreams.AddStreams'),
     ('DuplicateStreams', f'{FK}.duplicatestreams.DuplicateStreams'),
     ('FMPadding', f'{FK}.fmpadding.FMPadding'),
@@ -263,7 +268,9 @@ FINN_KERNEL_INFERENCES = [
     ('InferDuplicateStreamsLayer', f'{FT}.fpgadataflow.convert_to_hw_layers.InferDuplicateStreamsLayer', 'DuplicateStreams'),
     ('InferChannelwiseLinearLayer', f'{FT}.fpgadataflow.convert_to_hw_layers.InferChannelwiseLinearLayer', 'ChannelwiseOp'),
     ('InferLabelSelectLayer', f'{FT}.fpgadataflow.convert_to_hw_layers.InferLabelSelectLayer', 'LabelSelect'),
+    ('InferLayerNorm', f'{FT}.fpgadataflow.convert_to_hw_layers.InferLayerNorm', 'LayerNorm'),
     ('InferGlobalAccPoolLayer', f'{FT}.fpgadataflow.convert_to_hw_layers.InferGlobalAccPoolLayer', 'GlobalAccPool'),
+    ('InferHWSoftmax', f'{FT}.fpgadataflow.convert_to_hw_layers.InferHWSoftmax', 'HWSoftmax'),
     ('InferPool', f'{FT}.fpgadataflow.convert_to_hw_layers.InferPool', 'Pool'),
     ('InferConcatLayer', f'{FT}.fpgadataflow.convert_to_hw_layers.InferConcatLayer', 'StreamingConcat'),
     ('InferSplitLayer', f'{FT}.fpgadataflow.convert_to_hw_layers.InferSplitLayer', 'StreamingSplit'),
@@ -291,6 +298,7 @@ FINN_BACKENDS = [
     ('ElementwiseBinaryOperation_hls', f'{FK}.hls.elementwise_binary_hls.ElementwiseBinaryOperation_hls', 'ElementwiseBinaryOperation', 'hls'),
     ('FMPadding_Pixel_hls', f'{FK}.hls.fmpadding_pixel_hls.FMPadding_Pixel_hls', 'FMPadding_Pixel', 'hls'),
     ('GlobalAccPool_hls', f'{FK}.hls.globalaccpool_hls.GlobalAccPool_hls', 'GlobalAccPool', 'hls'),
+    ('HWSoftmax_hls', f'{FK}.hls.hwsoftmax_hls.HWSoftmax_hls', 'HWSoftmax', 'hls'),
     ('IODMA_hls', f'{FK}.hls.iodma_hls.IODMA_hls', 'IODMA', 'hls'),
     ('LabelSelect_hls', f'{FK}.hls.labelselect_hls.LabelSelect_hls', 'LabelSelect', 'hls'),
     ('Lookup_hls', f'{FK}.hls.lookup_hls.Lookup_hls', 'Lookup', 'hls'),
@@ -303,6 +311,7 @@ FINN_BACKENDS = [
     # RTL Backends
     ('ConvolutionInputGenerator_rtl', f'{FK}.rtl.convolutioninputgenerator_rtl.ConvolutionInputGenerator_rtl', 'ConvolutionInputGenerator', 'rtl'),
     ('FMPadding_rtl', f'{FK}.rtl.fmpadding_rtl.FMPadding_rtl', 'FMPadding', 'rtl'),
+    ('LayerNorm_rtl', f'{FK}.rtl.layernorm_rtl.LayerNorm_rtl', 'LayerNorm', 'rtl'),
     ('MVAU_rtl', f'{FK}.rtl.matrixvectoractivation_rtl.MVAU_rtl', 'MVAU', 'rtl'),
     ('StreamingDataWidthConverter_rtl', f'{FK}.rtl.streamingdatawidthconverter_rtl.StreamingDataWidthConverter_rtl', 'StreamingDataWidthConverter', 'rtl'),
     ('StreamingFIFO_rtl', f'{FK}.rtl.streamingfifo_rtl.StreamingFIFO_rtl', 'StreamingFIFO', 'rtl'),

@@ -32,7 +32,7 @@ def qonnx_to_finn_step(model: Any, cfg: Any) -> Any:
     """
     
     model = apply_transforms(model, [
-        'ExpandNorms',
+        'ExtractNormScaleBias',
         'FoldConstants',
         'ConvertDivToMul',
         'ConvertQONNXtoFINN'
