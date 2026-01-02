@@ -16,6 +16,9 @@ from typing import Any
 from brainsmith.core.plugins import step, get_transform
 from brainsmith.utils import apply_transforms
 
+from finn.builder.build_dataflow_config import VerificationStepType
+from finn.builder.build_dataflow_steps import verify_step
+
 logger = logging.getLogger(__name__)
 
 # === Conversion Steps ===
@@ -38,6 +41,8 @@ def qonnx_to_finn_step(model: Any, cfg: Any) -> Any:
         'ConvertQONNXtoFINN'
     ])
     
+    if VerificationStepType.QONNX_TO_FINN_PYTHON in cfg._resolve_verification_steps():
+        verify_step(model, cfg, "finn_onnx_python", need_parent=False)
     return model
 
 

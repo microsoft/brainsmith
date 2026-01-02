@@ -21,8 +21,9 @@ finn_config:
   auto_fifo_depths: true
   fifosim_n_inferences: 2         # Speed up FIFO sizing
   stitched_ip_gen_dcp: true
-#  verify_steps:
-#    - "node_by_node_rtlsim"
+  verify_steps:
+    - "finn_onnx_python"
+  #  - "node_by_node_rtlsim"
   #verify_save_rtlsim_waveforms: true #This is really big
   verify_save_full_context: true
   verification_atol: 0.1
