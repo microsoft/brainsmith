@@ -71,7 +71,7 @@ build_finnxsi_if_needed() {
             log_error "Failed to enter finnxsi directory"
             exit 1
         }
-        if make; then
+        if python -m finn.xsi.setup --quiet; then
             log_info "finnxsi built successfully"
         else
             emit_status "ERROR" "Failed to build finnxsi"
@@ -87,9 +87,6 @@ build_finnxsi_if_needed() {
         log_info "finnxsi already built - skipping"
     fi
 }
-
-# Third: Build finnxsi if needed (both daemon and one-shot mode)
-build_finnxsi_if_needed
 
 # Smart package management with persistent state
 CACHE_FILE="/tmp/.brainsmith_packages_installed"
@@ -196,12 +193,14 @@ install_packages_with_progress() {
     fi
 }
 
+
 # For daemon mode, complete ALL setup before going into background
 if [ "$BSMITH_CONTAINER_MODE" = "daemon" ]; then
     log_info "Daemon mode: ensuring all packages are installed before going into background"
     # Install packages if needed
     if ! packages_already_installed; then
         install_packages_with_progress
+        build_finnxsi_if_needed
     else
         log_info "Development packages already installed - using cached setup"
     fi
@@ -222,6 +221,7 @@ if [ $# -gt 0 ] && [ "$1" != "" ]; then
     # For direct commands, install packages only if needed
     if ! packages_already_installed; then
         install_packages_with_progress
+        build_finnxsi_if_needed
     fi
     exec bash -c "$*"
 else

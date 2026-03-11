@@ -22,6 +22,7 @@ packaging>=25.0
 protobuf==3.20.3
 psutil==5.9.4
 pyscaffold==4.4
+pybind11
 scikit-learn>=1.2.1
 scipy==1.10.1
 setupext-janitor>=1.1.2

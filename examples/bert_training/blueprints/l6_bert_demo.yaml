@@ -20,6 +20,7 @@ finn_config:
   split_large_fifos: true
   auto_fifo_depths: true
   fifosim_n_inferences: 2         # Speed up FIFO sizing
+  mlo: true
   stitched_ip_gen_dcp: true
   verify_steps:
     - "finn_onnx_python"
