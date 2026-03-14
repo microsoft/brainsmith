@@ -10,27 +10,32 @@ board: "V80"                        # Target FPGA board
 
 design_space:
   kernels:
+    # Computational Kernels
     - LayerNorm
-    - DuplicateStreams
     - ElementwiseBinaryOp
     - Shuffle
+    - Crop
+    - Lookup
     - Softmax
-    - finn:Thresholding
+    - brainsmith:Thresholding
     - finn:MVAU
+    # Infrastructure Kernels
+    - DuplicateStreams
 
   steps:
-    - "qonnx_to_finn"
-    # Topology optimization
+    - "bert_topology_cleanup"              # Model-specific (ExpandNorms)
+    - "finn_topology_cleanup"              # Generic graph optimization
+    - "import_qonnx_quantization"          # Quantization metadata import
     - "bert_streamlining"
-    - "normalize_dataflow_layouts" # Normalize tensors to NHWC layout
-    # Core Brainsmith steps
-    - "build_dataflow_graph"  # ONNX --> Kernels
-    - "build_hw_graph"        # Kernels --> HW Backends
-    # - "loop_rolling"
-    - "transpose_decomposition"
+    - "normalize_dataflow_layouts"         # Normalize tensors to NHWC layout
+    - "infer_computational_kernels"        # Infer pattern-based kernels (MVAU, LayerNorm, etc.)
+    - "insert_infrastructure_kernels"      # Insert topology-based kernels (DuplicateStreams, etc.)
+    - "specialize_kernel_backends"         # Select HLS/RTL backends + create dataflow partition
+    - "minimize_bit_width"
+    - "loop_rolling"
     - "brainsmith:target_fps_parallelization"
     - "apply_parallelization_config"
-    - "minimize_bit_width"
+    - "transpose_decomposition"
     - "generate_estimate_reports"
     - "hw_codegen"
     - "hw_ipgen"

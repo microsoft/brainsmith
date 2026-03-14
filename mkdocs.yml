@@ -2,9 +2,8 @@ site_name: Brainsmith
 site_description: From PyTorch to RTL - FPGA Accelerator Compiler for AI
 site_author: Microsoft
 site_url: https://microsoft.github.io/brainsmith/
-
 repo_name: microsoft/brainsmith
-repo_url: https://github.com/microsoft/brainsmith
+repo_url: https://github.com/microsoft/brainsmith/
 edit_uri: edit/main/docs/
 
 copyright: Copyright &copy; Microsoft. All rights reserved.
@@ -118,16 +117,28 @@ nav:
     - Hardware Kernels: developer-guide/hardware-kernels.md
     - Component Registry: developer-guide/registry.md
     - Blueprint Schema: developer-guide/blueprint-schema.md
+<<<<<<< HEAD
+    - Component Registry: developer-guide/registry-user-guide.md
+    - Multi-Layer Offload: developer-guide/multi-layer-offload.md
+||||||| merged common ancestors
+    - Component Registry: developer-guide/registry-user-guide.md
+=======
     - Dataflow Modeling: developer-guide/dataflow-modeling.md
     - Multi-Layer Offload: developer-guide/multi-layer-offload.md
+>>>>>>> main
   - API Reference:
     - Overview: api/index.md
     - CLI: api/cli.md
+<<<<<<< HEAD
+  - Tutorials (Coming Soon): tutorials/index.md
+||||||| merged common ancestors
+=======
     - Design Space Exploration: api/dse.md
     - Dataflow Modeling: api/dataflow.md
     - Component Registry: api/registry.md
     - Settings: api/settings.md
   - Tutorials (Coming Soon): tutorials/index.md
+>>>>>>> main
 
 extra_css:
   - stylesheets/extra.css

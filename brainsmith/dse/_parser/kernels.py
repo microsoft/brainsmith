@@ -30,7 +30,7 @@ def parse_kernels(kernels_data: list[str | dict]) -> list[tuple[str, list[type]]
         List of (kernel_name, backend_classes) tuples where backend_classes
         are in priority order (first backend is tried first during specialization).
         Kernels with no backends will have an empty backend_classes list and will
-        not be specialized during build_hw_graph (a warning is logged).
+        not be specialized during specialize_kernel_backends (a warning is logged).
 
     Raises:
         ValueError: If kernel spec format is invalid
@@ -86,7 +86,7 @@ def parse_kernels(kernels_data: list[str | dict]) -> list[tuple[str, list[type]]
         if not backend_classes:
             logger.debug(
                 f"Kernel '{kernel_name}' has no registered backends. "
-                f"This kernel will not be specialized during build_hw_graph."
+                f"This kernel will not be specialized during specialize_kernel_backends."
             )
 
         kernel_backends.append((kernel_name, backend_classes))

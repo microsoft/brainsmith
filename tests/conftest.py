@@ -7,12 +7,20 @@ This conftest.py is the root configuration for the DSE integration test suite.
 import pytest
 
 from brainsmith.registry import reset_registry
+from brainsmith.registry._state import _discovered_sources
 from brainsmith.settings import reset_config
 from brainsmith.settings.validation import ensure_environment_sourced
 
 # Validate environment is sourced before any tests run
 # This ensures FINN_ROOT, VIVADO_PATH, etc. are available for tests
 ensure_environment_sourced()
+
+# Populate discovered sources for proper source detection
+# This allows @backend/@kernel decorators to correctly detect "brainsmith" source
+# without running full discovery (which test framework avoids for speed)
+_discovered_sources.add("brainsmith")
+_discovered_sources.add("finn")
+_discovered_sources.add("project")
 
 # Import test components - these register @step, @kernel, @backend decorators
 # Available for tests that need globally-registered test components

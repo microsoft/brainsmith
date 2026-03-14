@@ -77,17 +77,21 @@ class ExpandNorms(Transformation):
                 else:
                     last_node = func_ln_node
 
-                # Add bias if present
+                # Add bias if non-trivial (not all zeros)
                 if bias is not None:
-                    bias_intermediate = oh.make_tensor_value_info(
-                        model.make_new_valueinfo_name(), TensorProto.FLOAT, act_shape
-                    )
-                    graph.value_info.append(bias_intermediate)
-                    last_node.output[0] = bias_intermediate.name
+                    bias_data = model.get_initializer(bias)
+                    if bias_data is not None and not np.allclose(bias_data, 0.0):
+                        bias_intermediate = oh.make_tensor_value_info(
+                            model.make_new_valueinfo_name(),
+                            TensorProto.FLOAT,
+                            act_shape
+                        )
+                        graph.value_info.append(bias_intermediate)
+                        last_node.output[0] = bias_intermediate.name
 
-                    add_node = oh.make_node("Add", [bias_intermediate.name, bias], [act_out])
-                    nodes_to_insert.append(add_node)
-                    model.set_tensor_datatype(bias_intermediate.name, wdt)
+                        add_node = oh.make_node("Add", [bias_intermediate.name, bias], [act_out])
+                        nodes_to_insert.append(add_node)
+                        model.set_tensor_datatype(bias_intermediate.name, wdt)
 
                 replacements.append((node_idx, node, nodes_to_insert))
 

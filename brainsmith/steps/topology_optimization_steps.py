@@ -2,12 +2,10 @@
 # Licensed under the MIT License.
 
 """
-Layout Normalization Build Step
+Topology Optimization Steps
 
-Provides a preprocessing step that normalizes all tensor layouts to NHWC
-(channel-last) format for dataflow acceleration. This eliminates the need
-for per-kernel layout checking and ensures consistent channel-last layout
-throughout the dataflow region.
+Graph optimization transformations applied after quantization import but before
+kernel inference. These optimize the graph topology for dataflow execution.
 """
 
 import logging
@@ -42,7 +40,6 @@ def normalize_dataflow_layouts_step(model: Any, cfg: Any) -> Any:
     Usage in blueprint:
         steps:
           - "normalize_dataflow_layouts"  # Add before kernel inference
-          - "build_dataflow_graph"
           - ...
     """
     logger.debug("Normalizing dataflow layouts to NHWC (channel-last)")

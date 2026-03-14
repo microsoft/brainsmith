@@ -255,6 +255,9 @@ class InputSchema:
         stream_tiling: Stream tiling specification (e.g., ["SIMD"], [1, 1, 1, "PE"])
         datatype: Datatype spec (None to use from ONNX, or DatatypeSpec union type to derive/optimize)
         required_layout: Expected input layout (e.g., "NHWC", "NCHW"), None if no requirement
+        mem_modes: Memory mode options for weight inputs (frozenset or callable returning frozenset).
+                   Valid modes: "embedded" (compile-time constant), "decoupled" (separate memory),
+                   "dynamic"/"external" (streaming). Generates input<idx>MemType DSE parameter.
     """
 
     # Identity
@@ -268,6 +271,9 @@ class InputSchema:
     # Transformation requirements (NEW - embedded in interface)
     required_layout: str | None = None
 
+    # Memory mode specification for weight inputs
+    mem_modes: frozenset[str] | Callable | None = None
+
     def __post_init__(self):
         """Validate interface requirements."""
         if self.required_layout and self.required_layout not in {"NCHW", "NHWC"}:
@@ -275,6 +281,21 @@ class InputSchema:
                 f"Invalid required_layout '{self.required_layout}' for input '{self.name}'. "
                 f"Must be 'NCHW' or 'NHWC'."
             )
+
+        # Validate mem_modes if specified
+        if self.mem_modes is not None and not callable(self.mem_modes):
+            VALID_MEM_MODES = {"embedded", "decoupled", "dynamic", "external"}
+            if not isinstance(self.mem_modes, frozenset):
+                raise TypeError(
+                    f"mem_modes for input '{self.name}' must be frozenset or callable, "
+                    f"got {type(self.mem_modes).__name__}"
+                )
+            invalid = self.mem_modes - VALID_MEM_MODES
+            if invalid:
+                raise ValueError(
+                    f"Invalid mem_modes {invalid} for input '{self.name}'. "
+                    f"Valid modes: {VALID_MEM_MODES}"
+                )
 
     @property
     def tiling_attrs(self) -> list[str]:
@@ -460,6 +481,12 @@ class KernelSchema:
         template_params = self._extract_template_params()
         for param in template_params:
             attrs[param] = ("i", False, 1)  # Default 1, will be computed from factoring
+
+        # Memory mode parameters (input<idx>MemType) - auto-extracted from mem_modes
+        for idx, inp in enumerate(self.inputs):
+            if inp.mem_modes is not None:
+                # Add input<idx>MemType as a string parameter
+                attrs[f"input{idx}MemType"] = ("s", False, "embedded")
 
         # DSE parameters (resource parameters)
         for param_name, param_spec in self.dse_parameters.items():

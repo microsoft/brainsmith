@@ -116,8 +116,8 @@ Kernels define the available hardware implementations for the dataflow graph. Th
 
 **Two kernel types:**
 
-- **Computational kernels** are pattern-matched from ONNX operations during the `build_dataflow_graph` step (e.g., ONNX MatMul → MVAU, ONNX Softmax → Softmax)
-- **Infrastructure kernels** are inserted by topology transforms that analyze graph structure (e.g., DuplicateStreams for tensor fanout, FIFO for buffering)
+- **Computational kernels** are pattern-matched from ONNX operations during the `infer_computational_kernels` step (e.g., ONNX MatMul → MVAU, ONNX Softmax → Softmax)
+- **Infrastructure kernels** are inserted by topology transforms during the `insert_infrastructure_kernels` step (e.g., DuplicateStreams for tensor fanout, FIFO for buffering)
 
 Both types use the backends you specify in this section.
 
@@ -139,7 +139,7 @@ class LayerNorm_hls(LayerNorm, HLSBackend):
 ```
 Then use `LayerNorm_hls` in the blueprint, not just `hls`.
 
-**Common computational kernels** (pattern-matched during `build_dataflow_graph`):
+**Common computational kernels** (pattern-matched during `infer_computational_kernels`):
 - `MVAU` - Matrix-Vector-Activation Unit (dense/linear layers)
 - `Thresholding` - Quantized activation functions
 - `LayerNorm` - Layer normalization
@@ -171,20 +171,18 @@ steps:
   # Optional steps - creates paths with and without
   - ["minimize_bit_width", ~]         # ~ means skip this step
 
-  # Dataflow graph construction (two-phase: infrastructure + computational)
-  - "build_dataflow_graph"            # Auto-splits kernels, inserts infrastructure + patterns
+  # Dataflow graph construction - Option 1: Combined (backward compatible)
+  - "build_dataflow_graph"            # Auto-splits kernels, runs both phases
 
-  # Advanced: Manual control (if not using build_dataflow_graph)
-  # - "insert_duplicate_streams"      # Insert DuplicateStreams only
-  # - "infer_kernels_manual"          # Pattern-match computational only
+  # Dataflow graph construction - Option 2: Split (finer control)
+  # - "insert_infrastructure_kernels" # Phase 1: topology-based (DuplicateStreams, etc.)
+  # - "infer_computational_kernels"   # Phase 2: pattern-matching (MVAU, LayerNorm, etc.)
 
-  # Post-inference infrastructure (optional, run after build_dataflow_graph)
-  - "insert_fifo"                     # Insert FIFOs for buffering
-  - "insert_dwc"                      # Insert data width converters
+  # Backend specialization
+  - "specialize_kernel_backends"      # Partition + select HLS/RTL backends
+  # Legacy name (deprecated): "build_hw_graph"
 
-  # Common FINN pipeline steps
-  - "create_dataflow_partition"       # Partition into dataflow regions
-  - "specialize_layers"               # Specialize to hardware
+  # Parallelization
   - "apply_folding_config"            # Apply parallelization
   - "generate_estimate_reports"       # Generate resource estimates
 ```

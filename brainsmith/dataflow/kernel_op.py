@@ -300,11 +300,9 @@ class KernelOp(HWCustomOp, ABC):
             build_ctx = BuildContext(
                 schema=self.kernel_schema,
                 model_w=model_w,
-                node_inputs=list(self.onnx_node.input),
-                node_outputs=list(self.onnx_node.output),
+                node=self.onnx_node,
                 param_getter=self.get_nodeattr,
                 param_setter=self.set_nodeattr,
-                node_name=self.onnx_node.name,
             )
 
             try:
@@ -324,6 +322,12 @@ class KernelOp(HWCustomOp, ABC):
                         # OrderedParameter: use get_default() (explicit default or minimum)
                         initial_value = param.get_default()
                     else:  # frozenset
+                        # Defensive: skip empty parameter sets (shouldn't happen with new design)
+                        if len(param) == 0:
+                            logger.debug(
+                                f"{self.onnx_node.name}: Skipping empty parameter {param_name}"
+                            )
+                            continue
                         # Discrete: use sorted first value
                         initial_value = sorted(param)[0]
 

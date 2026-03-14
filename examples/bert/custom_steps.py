@@ -23,8 +23,8 @@ Custom steps defined here:
 - generate_reference_io: Generate reference inputs/outputs for validation
 
 Core brainsmith steps also used in bert_demo.yaml:
-- bert_cleanup, bert_streamlining: from brainsmith.steps.bert_custom_steps
-- shell_metadata_handover: from brainsmith.steps.bert_custom_steps
+- bert_cleanup, bert_streamlining: from brainsmith.steps.bert_steps
+- shell_metadata_handover: from brainsmith.steps.bert_steps
 
 These steps are highly specific to BERT model architecture and demonstrate
 how to create example-specific steps using the @step decorator without

@@ -326,7 +326,7 @@ class Crop(KernelOp):
 
     @classmethod
     def infer_from(
-        cls, node: NodeProto, model: ModelWrapper, insert_index: int
+        cls, node: NodeProto, model: ModelWrapper, insert_index: int, kernel_index: int = None
     ) -> df.TransformationResult:
         """Create Crop HW node from ONNX Gather node.
 
@@ -340,6 +340,7 @@ class Crop(KernelOp):
             node: ONNX Gather node to convert
             model: ModelWrapper for graph access
             insert_index: Where to insert new nodes (unused - no layout conversion)
+            kernel_index: Sequential index for this kernel type (for naming)
 
         Returns:
             TransformationResult with Crop node and removed Gather node
@@ -405,14 +406,15 @@ class Crop(KernelOp):
             # Should not reach here due to earlier validation
             raise ValueError(f"Unsupported axis {axis}")
 
-        # Create HW node with crop parameters
+        # Create HW node with crop parameters and sequential naming
+        node_name = f"Crop_{kernel_index}" if kernel_index is not None else f"Crop_{node.name}"
         hw_node = helper.make_node(
             "Crop",
             inputs=list(node.input[:1]),  # Only first input (data, not indices)
             outputs=list(node.output),
             domain="brainsmith.kernels",
             backend="fpgadataflow",
-            name=f"Crop_{node.name}",
+            name=node_name,
             crop_north=int(crop_north),
             crop_south=int(crop_south),
             crop_east=int(crop_east),

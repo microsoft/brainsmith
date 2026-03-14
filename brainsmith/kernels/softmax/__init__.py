@@ -11,7 +11,4 @@
 from .softmax import Softmax
 from .softmax_hls import Softmax_hls
 
-__all__ = [
-    "Softmax",
-    "Softmax_hls",
-]
+__all__ = ["Softmax", "Softmax_hls"]

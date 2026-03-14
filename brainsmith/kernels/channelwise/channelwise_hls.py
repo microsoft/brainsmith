@@ -31,6 +31,7 @@
 
 from math import ceil
 
+import numpy as np
 from finn.custom_op.fpgadataflow.hlsbackend import HLSBackend
 from finn.util.data_packing import numpy_to_hls_code
 from qonnx.core.datatype import DataType
@@ -56,6 +57,8 @@ class ChannelwiseOp_hls(ChannelwiseOp, HLSBackend):
         my_attrs = ChannelwiseOp.get_nodeattr_types(self)
         my_attrs.update(HLSBackend.get_nodeattr_types(self))
         return my_attrs
+
+    # Removed _get_mem_mode() and get_instream_width() - embedded mode only, use base class
 
     # ================================================================
     # Resource Estimation (Uses design_point)
@@ -107,15 +110,31 @@ class ChannelwiseOp_hls(ChannelwiseOp, HLSBackend):
         return ret
 
     def generate_params(self, model, path):
-        """Generate params.h with parameter tensor."""
+        """Generate parameter header file (embedded mode only)."""
         code_gen_dir = path
-
-        # Get parameters and format for HLS
         parameters = model.get_initializer(self.onnx_node.input[1])
-        parameter_tensor = self.get_hls_compatible_parameter_tensor(parameters)
+        # Embedded mode: generate params.h header file
+        weight_filename = f"{code_gen_dir}/params.h"
+        self.make_weight_file(parameters, "hls_header", weight_filename)
+
+    def make_weight_file(self, weights, weight_file_mode, weight_file_name):
+        """Produce file containing parameters in HLS header format.
+
+        Args:
+            weights: numpy array with parameters
+            weight_file_mode: must be "hls_header" (embedded mode only)
+            weight_file_name: filename for weight file
+        """
+        if weight_file_mode != "hls_header":
+            raise Exception(f"Only hls_header mode supported (got {weight_file_mode})")
+
+        parameter_tensor = self.get_hls_compatible_parameter_tensor(weights)
         pdt = DataType[self.get_input_datatype(1).name]
 
-        parameters_hls_code = numpy_to_hls_code(parameter_tensor, pdt, "parameters", False, True)
+        # Generate params.h with ChannelWiseOperation initializer
+        parameters_hls_code = numpy_to_hls_code(
+            parameter_tensor, pdt, "parameters", False, True
+        )
 
         # Get datatypes
         idt = self.get_input_datatype(0)
@@ -151,7 +170,7 @@ class ChannelwiseOp_hls(ChannelwiseOp, HLSBackend):
         tmem = self.calc_tmem()
 
         # Write params.h
-        with open(f"{code_gen_dir}/params.h", "w") as f:
+        with open(weight_file_name, "w") as f:
             f.write(
                 f"static ChannelWiseOperation<{tmem},{pe},{idt_hls},"
                 f"{pdt_hls},{odt_hls},{func_str}> threshs = "
@@ -162,8 +181,7 @@ class ChannelwiseOp_hls(ChannelwiseOp, HLSBackend):
     # No overrides needed - FINN's implementation works correctly!
 
     def global_includes(self):
-        self.code_gen_dict["$GLOBALS$"] = ['#include "activations.hpp"']
-        self.code_gen_dict["$GLOBALS$"] += ['#include "params.h"']
+        self.code_gen_dict["$GLOBALS$"] = ['#include "activations.hpp"', '#include "params.h"']
 
     def defines(self, var):
         # Use design_point for semantic shape (not nodeattrs)
@@ -181,6 +199,7 @@ class ChannelwiseOp_hls(ChannelwiseOp, HLSBackend):
         ]
 
     def read_npy_data(self):
+        """Read NPY data for input stream (embedded mode only)."""
         code_gen_dir = self.get_nodeattr("code_gen_dir_cppsim")
         dtype = self.get_input_datatype(0)
         elem_bits = dtype.bitwidth()
@@ -190,13 +209,20 @@ class ChannelwiseOp_hls(ChannelwiseOp, HLSBackend):
         npy_type = "float"
         npy_in = f"{code_gen_dir}/input_0.npy"
 
-        self.code_gen_dict["$READNPYDATA$"] = []
-        self.code_gen_dict["$READNPYDATA$"].append(
+        self.code_gen_dict["$READNPYDATA$"] = [
             f"npy2apintstream<{packed_hls_type}, {elem_hls_type}, {elem_bits}, "
             f'{npy_type}>("{npy_in}", in0_V, false);'
-        )
+        ]
+
+    def strm_decl(self):
+        """Generate stream declarations (embedded mode only)."""
+        self.code_gen_dict["$STREAMDECLARATIONS$"] = [
+            f'hls::stream<ap_uint<{self.get_instream_width(0)}>> in0_V ("in0_V");',
+            f'hls::stream<ap_uint<{self.get_outstream_width()}>> out0_V ("out0_V");',
+        ]
 
     def docompute(self):
+        """Generate compute code (embedded mode only, matches FINN implementation)."""
         tmpl_args = self.get_template_param_values()
 
         # Spatial dim from semantic NHWC shape (design_point)
@@ -208,8 +234,9 @@ class ChannelwiseOp_hls(ChannelwiseOp, HLSBackend):
         elif len(block_shape) == 2:  # [N, C] - fully connected
             spatial_dim = 1
         else:
-            raise Exception(f"Unexpected block shape {block_shape}")
+            raise Exception(f"Unexpected block_shape {block_shape}")
 
+        # Embedded mode: parameters from params.h (FINN parity)
         self.code_gen_dict["$DOCOMPUTE$"] = [
             f"Thresholding_Batch<{spatial_dim}, NumChannels1, PE1, "
             f"{tmpl_args['TSrcI']}, {tmpl_args['TDstI']}>"
@@ -238,22 +265,22 @@ class ChannelwiseOp_hls(ChannelwiseOp, HLSBackend):
         ]
 
     def blackboxfunction(self):
+        """Generate blackbox function signature (embedded mode only)."""
         self.code_gen_dict["$BLACKBOXFUNCTION$"] = [
-            f"void {self.onnx_node.name}(hls::stream<ap_uint<{self.get_instream_width()}>> &in0_V, "
+            f"void {self.onnx_node.name}(hls::stream<ap_uint<{self.get_instream_width(0)}>> &in0_V, "
             f"hls::stream<ap_uint<{self.get_outstream_width()}>> &out0_V)"
         ]
 
     def pragmas(self):
-        self.code_gen_dict["$PRAGMAS$"] = ["#pragma HLS INTERFACE axis port=in0_V"]
-        self.code_gen_dict["$PRAGMAS$"].append("#pragma HLS INTERFACE axis port=out0_V")
-        self.code_gen_dict["$PRAGMAS$"].append("#pragma HLS INTERFACE ap_ctrl_none port=return")
+        """Generate HLS pragmas (embedded mode only)."""
+        self.code_gen_dict["$PRAGMAS$"] = [
+            "#pragma HLS INTERFACE axis port=in0_V",
+            "#pragma HLS INTERFACE axis port=out0_V",
+            "#pragma HLS INTERFACE ap_ctrl_none port=return",
+            "#pragma HLS ARRAY_PARTITION variable=threshs.parameters complete dim=1",
+        ]
 
-        # Partition parameter array
-        self.code_gen_dict["$PRAGMAS$"].append(
-            "#pragma HLS ARRAY_PARTITION variable=threshs.parameters complete dim=1"
-        )
-
-        # Set resource type
+        # Set resource type for parameter storage
         ram_style = self.get_nodeattr("ram_style")
         input_iface = self.design_point.inputs["input"]
         pe = input_iface.stream_shape[-1]  # PE from stream tiling

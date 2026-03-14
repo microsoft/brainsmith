@@ -11,48 +11,64 @@ Access via registry:
     step_fn = get_step("qonnx_to_finn_step")
 """
 
-# Core FINN-compatible steps
+# Topology cleanup steps
+from brainsmith.steps.topology_cleanup_steps import (
+    finn_topology_cleanup_step,
+    import_qonnx_quantization_step,
+)
+
+# Topology optimization steps
+from brainsmith.steps.topology_optimization_steps import (
+    normalize_dataflow_layouts_step,
+)
+
+# Core dataflow compilation steps
+from brainsmith.steps.core_steps import (
+    build_dataflow_graph,
+    insert_infrastructure_kernels_step,
+    infer_computational_kernels_step,
+    specialize_kernel_backends,
+    build_hw_graph,  # Deprecated alias
+)
+
+# Hardware optimization steps
+from brainsmith.steps.hardware_optimization_steps import (
+    constrain_folding_and_set_pumped_compute_step,
+    apply_parallelization_config_step,
+    target_fps_parallelization_step,
+    explore_kernel_params_step,
+    minimize_bit_width_step,
+)
+
 # BERT-specific steps
-from brainsmith.steps.bert_custom_steps import (
+from brainsmith.steps.bert_steps import (
+    bert_topology_cleanup_step,
     bert_cleanup_step,
     bert_streamlining_step,
     shell_metadata_handover_step,
 )
 
-# Dataflow graph construction
-from brainsmith.steps.build_dataflow_graph import build_dataflow_graph
-
-# Specialization to HW backends
-from brainsmith.steps.build_hw_graph import build_hw_graph
-from brainsmith.steps.core_steps import (
-    constrain_folding_and_set_pumped_compute_step,
-    qonnx_to_finn_step,
-    specialize_layers_step,
-)
-
-# Layout normalization
-from brainsmith.steps.normalize_layouts import normalize_dataflow_layouts_step
-
-# Parallelization
-from brainsmith.steps.parallelization import (
-    apply_parallelization_config_step,
-    target_fps_parallelization_step,
-)
-
-# Parameter exploration
-from brainsmith.steps.parameter_exploration import explore_kernel_params_step
-
 __all__ = [
-    "qonnx_to_finn_step",
-    "specialize_layers_step",
-    "constrain_folding_and_set_pumped_compute_step",
-    "shell_metadata_handover_step",
-    "bert_cleanup_step",
-    "bert_streamlining_step",
-    "build_dataflow_graph",
-    "build_hw_graph",
-    "normalize_dataflow_layouts_step",
-    "explore_kernel_params_step",
-    "apply_parallelization_config_step",
-    "target_fps_parallelization_step",
+    # Topology cleanup
+    'finn_topology_cleanup_step',
+    'import_qonnx_quantization_step',
+    # Topology optimization
+    'normalize_dataflow_layouts_step',
+    # Core dataflow compilation
+    'build_dataflow_graph',
+    'insert_infrastructure_kernels_step',
+    'infer_computational_kernels_step',
+    'specialize_kernel_backends',
+    'build_hw_graph',  # Deprecated
+    # Hardware optimization
+    'constrain_folding_and_set_pumped_compute_step',
+    'apply_parallelization_config_step',
+    'target_fps_parallelization_step',
+    'explore_kernel_params_step',
+    'minimize_bit_width_step',
+    # BERT-specific
+    'bert_topology_cleanup_step',
+    'bert_cleanup_step',
+    'bert_streamlining_step',
+    'shell_metadata_handover_step',
 ]

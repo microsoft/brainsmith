@@ -17,6 +17,8 @@
 ############################################################################
 
 
+import logging
+
 import numpy as np
 from onnx import NodeProto, helper
 from qonnx.core.datatype import DataType
@@ -27,18 +29,18 @@ from qonnx.util.basic import interleave_matrix_outer_dim_from_partitions
 import brainsmith.dataflow as df
 from brainsmith.dataflow import FULL_DIM, KernelOp
 from brainsmith.dataflow.constraints import (
-    DatatypeInteger,
-    DimensionDivisible,
     IsDynamic,
-    IsStatic,
 )
 from brainsmith.dataflow.spec_helpers import derive_dim
-from brainsmith.dataflow.types import VALUE_OPTIMIZED, ShapeHierarchy
+from brainsmith.dataflow.types import ShapeHierarchy
 from brainsmith.registry import kernel
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Thresholding Schema
 # =============================================================================
+
 
 THRESHOLDING_SCHEMA = df.KernelSchema(
     name="Thresholding",
@@ -55,7 +57,8 @@ THRESHOLDING_SCHEMA = df.KernelSchema(
             # Not tiled or streamed - full tensor loaded as initializer
             block_tiling=[],  # No block tiling (static data)
             stream_tiling=[],  # Not streamed (static data)
-            datatype=VALUE_OPTIMIZED,  # Optimize from actual values
+            datatype=None,  # Read from graph (ImportQONNXQuantization already set it)
+            mem_modes=frozenset({"embedded", "decoupled", "dynamic"}),  # All possible modes
         ),
     ],
     outputs=[
@@ -74,19 +77,15 @@ THRESHOLDING_SCHEMA = df.KernelSchema(
         "num_steps": ("i", True, 1),  # Number of threshold steps (required)
         "act_val": ("i", False, 0),  # Activation bias value (ActVal)
         "num_input_vectors": ("ints", False, [1]),  # Batch/spatial dims (legacy)
-        "runtime_writeable_weights": ("i", False, 0),  # AXI-lite writable (1/0)
+        "runtime_writeable_weights": ("i", False, 0),  # Legacy FINN compat (always 0)
     },
     # =========================================================================
     # VALIDATION: Constraints
     # =========================================================================
     constraints=[
-        # Input must be dynamic, thresholds must be static
         IsDynamic(("input",)),
-        IsStatic(("thresholds",)),
-        # PE must divide number of channels
-        DimensionDivisible("input", -1, "PE", hierarchy=df.ShapeHierarchy.STREAM),
-        # Datatypes must be integer (enforced in can_infer_from)
-        DatatypeInteger(("input", "output")),
+        # Note: IsStatic(("thresholds",)) removed - causes issues in loop bodies
+        # where thresholds are streamed. mem_modes handles embedded/decoupled/dynamic.
     ],
     # Parallelization
 )
@@ -153,7 +152,7 @@ class Thresholding(KernelOp):  # → HWCustomOp → CustomOp (inheritance chain)
         ) == mt_inst.get_nodeattr("out_bias")
 
     @staticmethod
-    def infer_from(node, model: ModelWrapper, insert_index: int) -> df.TransformationResult:
+    def infer_from(node, model: ModelWrapper, insert_index: int, kernel_index: int = None) -> df.TransformationResult:
         """Convert MultiThreshold node to Thresholding node.
 
         Extracts and validates MultiThreshold-specific parameters (scale, actval).
@@ -164,6 +163,7 @@ class Thresholding(KernelOp):  # → HWCustomOp → CustomOp (inheritance chain)
             node: MultiThreshold ONNX node
             model: Model wrapper
             insert_index: Where to insert new node (unused - no layout conversion)
+            kernel_index: Sequential index for this kernel type (for naming)
 
         Returns:
             df.TransformationResult with new Thresholding node
@@ -195,20 +195,28 @@ class Thresholding(KernelOp):  # → HWCustomOp → CustomOp (inheritance chain)
         thl_thres_shape = model.get_tensor_shape(node.input[1])
         thl_in_shape = model.get_tensor_shape(node.input[0])
 
-        # Create HW node
+        # Create HW node with sequential naming
+        node_name = f"Thresholding_{kernel_index}" if kernel_index is not None else f"Thresholding_{node.name}"
         hw_node = helper.make_node(
             "Thresholding",
             inputs=list(node.input),
             outputs=list(node.output),
             domain="brainsmith.kernels",
             backend="fpgadataflow",
-            name=f"Thresholding_{node.name}",
+            name=node_name,
             # Kernel parameters
             num_steps=int(thl_thres_shape[1]),
             act_val=actval,
             num_input_vectors=list(thl_in_shape[:-1]),
             runtime_writeable_weights=0,
         )
+
+        # Mark thresholds as weight (for mem_mode parameter creation)
+        # Thresholds input (index 1) is always an initializer
+        # Attribute presence indicates weight; builder will create parameter
+        thresholds_input = node.input[1]
+        if model.get_initializer(thresholds_input) is not None:
+            hw_node.attribute.append(helper.make_attribute("input1MemType", "embedded"))
 
         return df.TransformationResult(nodes_to_insert=[hw_node], nodes_to_remove=[node])
 
@@ -219,30 +227,28 @@ class Thresholding(KernelOp):  # → HWCustomOp → CustomOp (inheritance chain)
     def get_instream_width(self, ind=0):
         """Get input stream width in bits.
 
-        Overrides base class for ind=1 to handle decoupled threshold memory mode.
-        In decoupled mode, thresholds stream in via AXI-Stream instead of being
-        embedded in BRAM.
+        Overrides base class for ind=1 to handle threshold memory modes.
+        In decoupled and dynamic modes, thresholds stream in via AXI-Stream.
 
         For ind=0 (data): Uses base class (PE * input_datatype.bitwidth())
-        For ind=1 (thresholds): PE * weight_datatype.bitwidth() * num_steps if decoupled, else 0
+        For ind=1 (thresholds): PE * weight_datatype.bitwidth() * num_steps if streaming, else 0
         """
         if ind == 0:
             # Use base class implementation
             return super().get_instream_width(ind)
         elif ind == 1:
-            # Custom logic for threshold memory modes
-            mem_mode = (
-                self.get_nodeattr("mem_mode")
-                if self.has_nodeattr("mem_mode")
-                else "internal_embedded"
-            )
+            # Get mem_mode from design point inputs (defaults to "embedded")
+            thresholds_iface = self.design_point.inputs.get("thresholds")
+            mem_mode = (thresholds_iface.mem_mode if thresholds_iface and thresholds_iface.mem_mode
+                       else "embedded")
 
-            if mem_mode == "internal_decoupled":
+            # Both decoupled and dynamic modes require streaming interface
+            if mem_mode in ("decoupled", "dynamic"):
                 pe = self.get_nodeattr("PE")
                 wp = self.get_input_datatype(1).bitwidth()
                 n_thres_steps = self.get_nodeattr("num_steps")
                 return pe * wp * n_thres_steps
-            return 0
+            return 0  # embedded mode: no streaming interface
         else:
             raise ValueError(f"Invalid input index: {ind}")
 
@@ -251,11 +257,22 @@ class Thresholding(KernelOp):  # → HWCustomOp → CustomOp (inheritance chain)
 
         Returns: NumChannels // PE
         """
-        self.get_
         ki = self.design_point
-        num_channels = ki.inputs["input"].tensor_shape[-1]
+        num_channels = ki.inputs["input"].block_shape[-1]
         pe = self.get_nodeattr("PE")
         return num_channels // pe
+
+    def get_exp_cycles(self):
+        """Return expected cycles for thresholding operation.
+
+        Formula: Channels/PE × batch_size × fmdim × fmdim
+        This is the product of all folded output shape dimensions except the last (PE).
+
+        Returns:
+            int: Expected number of cycles
+        """
+        import numpy as np
+        return np.prod(self.get_folded_output_shape()[:-1])
 
     def get_hw_compatible_threshold_tensor(self, orig_thres_matrix):
         """Convert threshold matrix to HW-compatible format.
@@ -273,7 +290,7 @@ class Thresholding(KernelOp):  # → HWCustomOp → CustomOp (inheritance chain)
             Reshaped threshold tensor (1, PE, TMEM, n_thres_steps)
         """
         ki = self.design_point
-        num_channels = ki.inputs["input"].tensor_shape[-1]
+        num_channels = ki.inputs["input"].block_shape[-1]
         pe = self.get_nodeattr("PE")
         tmem = num_channels // pe
 
@@ -320,6 +337,9 @@ class Thresholding(KernelOp):  # → HWCustomOp → CustomOp (inheritance chain)
 
         Applies multi-threshold activation to input tensor.
         """
+        # Ensure design_space initialized (QONNX executor creates fresh instances)
+        self._ensure_initialized_for_execution(graph)
+
         node = self.onnx_node
         inp_values = context[node.input[0]]
         th_val = context[node.input[1]]
@@ -346,20 +366,53 @@ class Thresholding(KernelOp):  # → HWCustomOp → CustomOp (inheritance chain)
 
         context[node.output[0]] = y.astype(np.float32)
 
-    def make_shape_compatible_op(self, model):
-        """Create a shape-compatible ONNX node.
+    def infer_node_datatype(self, model):
+        """Infer and propagate datatypes (inputs and outputs).
 
-        Used during shape inference to create a temporary node
-        with explicit shape information.
+        Overrides base class to also propagate threshold datatype to model.
+        Base class only propagates outputs, but threshold dtype optimization
+        requires updating the model's input[1] tensor datatype.
         """
-        in_shape = self.get_normal_input_shape(0)
-        out_shape = self.get_normal_output_shape(0)
+        # Call base class (initializes design space, propagates outputs)
+        super().infer_node_datatype(model)
 
-        return helper.make_node(
-            "Thresholding",
-            inputs=self.onnx_node.input,
-            outputs=self.onnx_node.output,
-            domain="brainsmith.kernels",
-            input_shape=list(in_shape),
-            output_shape=list(out_shape),
-        )
+        # Additionally propagate threshold datatype to model
+        # This matches FINN's minimize_accumulator_width which updates model tensor dtype
+        if len(self.onnx_node.input) > 1:
+            thresh_dtype = self.get_input_datatype(1)
+            model.set_tensor_datatype(self.onnx_node.input[1], thresh_dtype)
+
+    # ================================================================
+    # MLO Loop Body Adaptation
+    # ================================================================
+
+    def adapt_for_loop_body(self, loop_signature):
+        """Adapt Thresholding for use in FINNLoop body.
+
+        Forces threshold memory mode to "dynamic" when weights are streamed from loop level.
+        Only modifies the attribute if:
+        1. Thresholds are marked as weight (attribute exists from InferKernel)
+        2. Loop signature indicates input is PARAMETER (streamed per iteration)
+
+        Args:
+            loop_signature: List of LoopBodyInputType values for each input
+        """
+        from qonnx.util.basic import get_by_name
+
+        # Check if thresholds are marked as weight
+        attr = get_by_name(self.onnx_node.attribute, "input1MemType")
+        if attr is None:
+            return  # Not a weight, nothing to adapt
+
+        # Check if loop signature indicates this input is streamed as parameter
+        if loop_signature and len(loop_signature) > 1:
+            from finn.transformation.fpgadataflow.loop_rolling import LoopBodyInputType
+
+            if loop_signature[1] == LoopBodyInputType.PARAMETER:
+                self.set_nodeattr("input1MemType", "dynamic")
+                logger.debug(f"{self.onnx_node.name}: Forced input1MemType=dynamic for MLO")
+
+    def make_shape_compatible_op(self, model):
+        oshape = model.get_tensor_shape(self.onnx_node.output[0])
+        # implement tensor with correct shape
+        return super().make_const_shape_op(oshape)

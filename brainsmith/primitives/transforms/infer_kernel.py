@@ -108,6 +108,7 @@ class InferKernel(Transformation):
         nodes_processed = 0
         nodes_converted = 0
         nodes_failed = 0
+        kernel_index = 0  # Track sequential index for this kernel type
 
         # Iterate nodes (copy list since we'll modify it)
         for node_ind, node in enumerate(list(graph.node)):
@@ -121,7 +122,8 @@ class InferKernel(Transformation):
                 logger.debug(f"Inferring {self.kernel_name} from {node.op_type} node {node.name}")
 
                 # Delegate to kernel-specific inference (naive node creation)
-                result = self.kernel_cls.infer_from(node, model, node_ind + 1)
+                # Pass kernel_index for sequential naming
+                result = self.kernel_cls.infer_from(node, model, node_ind + 1, kernel_index=kernel_index)
 
                 # VALIDATE new kernel nodes before applying transformation
                 # Try to create KernelOp instances and validate design space
@@ -143,6 +145,16 @@ class InferKernel(Transformation):
                             raise  # Re-raise to outer catch block
 
                 # All validations passed - apply graph modifications
+
+                # Ensure opset import exists for new kernel domain
+                for new_node in result.nodes_to_insert:
+                    if new_node.domain:  # Only add if node has a domain
+                        existing_domains = {op.domain for op in model.model.opset_import}
+                        if new_node.domain not in existing_domains:
+                            import onnx.helper as oh
+                            model.model.opset_import.append(oh.make_opsetid(new_node.domain, 1))
+                            logger.debug(f"  Added opset import for domain: {new_node.domain}")
+
                 for i, new_node in enumerate(result.nodes_to_insert):
                     graph.node.insert(node_ind + 1 + i, new_node)
                     logger.debug(f"  Inserted {new_node.op_type} node {new_node.name}")
@@ -156,6 +168,7 @@ class InferKernel(Transformation):
                     logger.debug(f"  Metadata: {result.metadata}")
 
                 nodes_converted += 1
+                kernel_index += 1  # Increment index after successful conversion
                 graph_modified = True
 
             except Exception as e:

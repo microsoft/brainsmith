@@ -305,7 +305,7 @@ class RotaryEmbedding_rtl(RotaryEmbedding, RTLBackend):
         self.set_nodeattr("rtlsim_so", sim.lib._name)
         return None
 
-    def code_generation_ipi(self):
+    def code_generation_ipi(self, behavioral=False):
         """Constructs and returns the TCL for node instantiation in Vivado IPI."""
         code_gen_dir = self.get_nodeattr("code_gen_dir_ipgen")
 

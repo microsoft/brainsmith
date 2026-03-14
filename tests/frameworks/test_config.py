@@ -27,6 +27,7 @@ class ModelStructure:
         operation: ONNX operation name (e.g., "Add", "MatMul", "Conv")
         input_shapes: Dict mapping input names to shapes
         input_dtypes: Dict mapping input names to DataTypes
+        output_dtypes: Dict mapping output names to DataTypes (optional)
 
     Example:
         model = ModelStructure(
@@ -39,6 +40,8 @@ class ModelStructure:
     operation: str
     input_shapes: dict[str, tuple[int, ...]]
     input_dtypes: dict[str, DataType]
+    output_dtypes: dict[str, DataType] | None = None
+    dimensions: dict[str, any] | None = None  # Extra parameters (e.g., threshold config)
 
     def __post_init__(self):
         """Validate that shapes and dtypes have matching keys."""

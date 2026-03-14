@@ -27,8 +27,12 @@ from math import ceil
 
 import numpy as np
 from finn.custom_op.fpgadataflow.hlsbackend import HLSBackend
-from finn.util.data_packing import numpy_to_hls_code
+from finn.util.data_packing import (
+    numpy_to_hls_code,
+    pack_innermost_dim_as_hex_string,
+)
 from qonnx.core.datatype import DataType
+from qonnx.util.basic import roundup_to_integer_multiple
 
 from brainsmith.kernels.elementwise_binary.elementwise_binary import ElementwiseBinaryOp
 from brainsmith.registry import backend
@@ -63,7 +67,7 @@ class BufferDeclaration:
 @backend(
     target_kernel="brainsmith:ElementwiseBinaryOp",
     language="hls",
-    author="Migrated from AMD FINN by Thomas Keller",
+    author="AMD FINN",
 )
 class ElementwiseBinaryOp_hls(ElementwiseBinaryOp, HLSBackend):
     """HLS backend for ElementwiseBinaryOp (KernelOp-based).
@@ -260,22 +264,33 @@ class ElementwiseBinaryOp_hls(ElementwiseBinaryOp, HLSBackend):
     def _needs_streaming_interface(self, input_name):
         """Check if input needs a streaming (dynamic) interface.
 
+        Determines streaming vs static based on mem_mode (single source of truth):
+        - RHS with mem_mode in ("embedded", "decoupled"): static (loaded from params.hpp)
+        - RHS with mem_mode == "dynamic": streaming (MLO case)
+        - RHS with no mem_mode: streaming (not a weight)
+        - LHS: always streaming
+
         Args:
             input_name: "lhs" or "rhs"
 
         Returns:
             True if input should be streamed, False if static parameter
         """
-        input_pattern = self.get_nodeattr("input_pattern")
-
-        if input_pattern == "dynamic_static":
-            # Phase 1: Only LHS is streaming
-            return input_name == "lhs"
-        elif input_pattern == "dynamic_dynamic":
-            # Phase 2: Both inputs are streaming
+        if input_name == "lhs":
+            # LHS is always streaming
             return True
-        else:
-            raise ValueError(f"Unknown input_pattern: {input_pattern}")
+
+        # RHS: check mem_mode to determine if static or streaming
+        rhs_iface = self.design_point.inputs.get("rhs")
+        if rhs_iface and hasattr(rhs_iface, "mem_mode") and rhs_iface.mem_mode:
+            # Weight with mem_mode set
+            if rhs_iface.mem_mode in ("embedded", "decoupled"):
+                return False  # Static - loaded from params.hpp
+            else:  # "dynamic"
+                return True  # Streaming - MLO case
+
+        # No mem_mode or not a weight - streaming
+        return True
 
     def _get_buffer_declaration(self, input_name: str, pe: int) -> BufferDeclaration | None:
         """Generate buffer array declaration for an input.
@@ -383,6 +398,7 @@ class ElementwiseBinaryOp_hls(ElementwiseBinaryOp, HLSBackend):
 
         For dynamic_static pattern: Generates RHS parameter array
         For dynamic_dynamic pattern: Creates empty params.hpp (no static inputs)
+        For MLO (dynamic mem_mode): Generates memblock.dat for FINNLoop
 
         Implements FINN-compatible parameter reshaping:
         1. Reshape to folded input shape (matches PE-parallelized access)
@@ -390,7 +406,6 @@ class ElementwiseBinaryOp_hls(ElementwiseBinaryOp, HLSBackend):
         3. Pad dimensions from left to align with output shape for broadcasting
         """
         code_gen_dir = path
-        input_pattern = self.get_nodeattr("input_pattern")
 
         # Collect parameter code for static inputs
         param_code_sections = []
@@ -436,15 +451,19 @@ class ElementwiseBinaryOp_hls(ElementwiseBinaryOp, HLSBackend):
                     f"#pragma HLS ARRAY_PARTITION variable=lhs complete dim={len(lhs_shape)}"
                 )
 
-        # Check RHS (static in dynamic_static pattern)
-        if not self._needs_streaming_interface("rhs"):
-            rhs_parameters = model.get_initializer(self.onnx_node.input[1])
-            if rhs_parameters is None:
-                raise ValueError(
-                    f"ElementwiseBinaryOp with pattern '{input_pattern}' requires static RHS parameter, "
-                    f"but {self.onnx_node.input[1]} is not an initializer"
-                )
+        # Check RHS - handle both static (embedded) and MLO (dynamic) cases
+        # For MLO, RHS is streaming but FINNLoop.generate_params() sets the initializer
+        rhs_parameters = model.get_initializer(self.onnx_node.input[1])
 
+        # Determine if this is MLO mode (dynamic mem_mode with initializer)
+        rhs_iface = self.design_point.inputs.get("rhs")
+        is_mlo_mode = (
+            rhs_iface is not None
+            and hasattr(rhs_iface, "mem_mode")
+            and rhs_iface.mem_mode == "dynamic"
+        )
+
+        if rhs_parameters is not None:
             rhs_dtype = DataType[self.get_input_datatype(1).name]
 
             # FINN-compatible reshaping: folded shape → PE broadcast → dimension padding
@@ -459,17 +478,43 @@ class ElementwiseBinaryOp_hls(ElementwiseBinaryOp, HLSBackend):
             rhs_shape = (len(out_shape) - len(rhs_shape)) * (1,) + rhs_shape
             rhs_parameters = rhs_parameters.reshape(*rhs_shape)
 
-            rhs_code = numpy_to_hls_code(rhs_parameters, rhs_dtype, "rhs", False, False)
+            if is_mlo_mode:
+                # MLO mode: write memblock.dat for FINNLoop.generate_params()
+                # This matches FINN's ElementwiseBinaryOperation_hls behavior
+                # Merge first dimensions together for streaming format
+                rhs_flat = rhs_parameters.reshape(-1, pe)
+                # Flip PE dimension (FINN convention for streaming)
+                rhs_flat = np.flip(rhs_flat, axis=-1)
+                rhs_width = self.get_instream_width(1)
+                # Pad to nearest 4 bits to get hex strings
+                rhs_width_padded = roundup_to_integer_multiple(rhs_width, 4)
+                rhs_tensor = pack_innermost_dim_as_hex_string(
+                    rhs_flat, rhs_dtype, rhs_width_padded, prefix=""
+                )
+                rhs_stream = rhs_tensor.flatten()
+                rhs_stream = rhs_stream.copy()
+                with open(f"{code_gen_dir}/memblock.dat", "w") as f:
+                    for val in rhs_stream:
+                        f.write(val + "\n")
+            elif not self._needs_streaming_interface("rhs"):
+                # Static embedded mode: write to params.hpp
+                rhs_code = numpy_to_hls_code(rhs_parameters, rhs_dtype, "rhs", False, False)
 
-            param_code_sections.append("// RHS parameter tensor\n")
-            param_code_sections.append(rhs_code)
+                param_code_sections.append("// RHS parameter tensor\n")
+                param_code_sections.append(rhs_code)
 
-            # Add HLS pragmas for parameter storage and partitioning
-            self.code_gen_dict["$PRAGMAS$"].append(
-                "#pragma HLS BIND_STORAGE variable=rhs type=ROM_2P impl=distributed"
-            )
-            self.code_gen_dict["$PRAGMAS$"].append(
-                f"#pragma HLS ARRAY_PARTITION variable=rhs complete dim={len(rhs_shape)}"
+                # Add HLS pragmas for parameter storage and partitioning
+                self.code_gen_dict["$PRAGMAS$"].append(
+                    "#pragma HLS BIND_STORAGE variable=rhs type=ROM_2P impl=distributed"
+                )
+                self.code_gen_dict["$PRAGMAS$"].append(
+                    f"#pragma HLS ARRAY_PARTITION variable=rhs complete dim={len(rhs_shape)}"
+                )
+        elif not self._needs_streaming_interface("rhs"):
+            # Static mode but no initializer - error
+            raise ValueError(
+                f"ElementwiseBinaryOp with static RHS (mem_mode=embedded/decoupled) requires RHS parameter, "
+                f"but {self.onnx_node.input[1]} is not an initializer"
             )
 
         # Write params.hpp
@@ -477,8 +522,8 @@ class ElementwiseBinaryOp_hls(ElementwiseBinaryOp, HLSBackend):
             if param_code_sections:
                 f.write("".join(param_code_sections))
             else:
-                # No static parameters (dynamic_dynamic pattern)
-                f.write("// No static parameters (both inputs are streaming)\n")
+                # No static parameters (dynamic_dynamic pattern or MLO)
+                f.write("// No static parameters (inputs are streaming or MLO)\n")
 
     def execute_node(self, context, graph):
         """Execute ElementwiseBinaryOp in python, cppsim, or rtlsim mode.
@@ -750,11 +795,15 @@ class ElementwiseBinaryOp_hls(ElementwiseBinaryOp, HLSBackend):
         Returns:
             List of C++ code lines for header section
         """
-        input_pattern = self.get_nodeattr("input_pattern")
         func = self.get_nodeattr("func")
 
+        # Determine pattern for documentation
+        lhs_streaming = self._needs_streaming_interface("lhs")
+        rhs_streaming = self._needs_streaming_interface("rhs")
+        pattern_desc = f"lhs={'stream' if lhs_streaming else 'static'}, rhs={'stream' if rhs_streaming else 'static'}"
+
         return [
-            f"// Elementwise binary operation: {func} ({input_pattern})",
+            f"// Elementwise binary operation: {func} ({pattern_desc})",
             f"{tmpl_args['OutType']} out[PE];",
             "#pragma HLS ARRAY_PARTITION variable=out complete dim=1",
             "",

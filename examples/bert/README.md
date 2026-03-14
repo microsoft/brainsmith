@@ -87,7 +87,7 @@ blueprint YAML.
 - **remove_tail**: Removes classification head to focus on encoder
 - **generate_reference_io**: Creates test vectors for RTL verification
 
-**Core brainsmith steps used from brainsmith.steps.bert_custom_steps:**
+**Core brainsmith steps used from brainsmith.steps.bert_steps:**
 - **bert_cleanup**: BERT-specific model cleanup and normalization
 - **bert_streamlining**: Streamline BERT model structure
 - **shell_metadata_handover**: Extract metadata for shell integration

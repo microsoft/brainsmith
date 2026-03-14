@@ -5,12 +5,18 @@
 
 """Insert DuplicateStreams layers for tensor fanout."""
 
+
+import logging
+
 from onnx import TensorProto, helper
+from onnx.onnx_pb import StringStringEntryProto
 from qonnx.core.modelwrapper import ModelWrapper
 from qonnx.transformation.base import Transformation
 from qonnx.transformation.general import SortGraph
 from qonnx.transformation.infer_datatypes import InferDataTypes
 from qonnx.transformation.infer_shapes import InferShapes
+
+logger = logging.getLogger(__name__)
 
 
 class InsertDuplicateStreams(Transformation):
@@ -121,6 +127,18 @@ class InsertDuplicateStreams(Transformation):
         # Required by FINN's SpecializeKernel transform (line 68-76)
         dup_node.attribute.append(helper.make_attribute("backend", "fpgadataflow"))
 
+        # Copy PyTorch hierarchy metadata for MLO loop rolling
+        # Infrastructure kernels must inherit hierarchy from consumers (they exist to serve them)
+        metadata_copied = self._copy_hierarchy_metadata(
+            dup_node, successors, model, output_tensor
+        )
+
+        if not metadata_copied:
+            logger.debug(
+                f"DuplicateStreams for {output_tensor}: no hierarchy metadata found "
+                f"(may be excluded from FINNLoop)"
+            )
+
         # Insert node into graph
         graph.node.insert(insert_index, dup_node)
 
@@ -133,3 +151,116 @@ class InsertDuplicateStreams(Transformation):
                     clone_idx += 1
                     # Break inner loop - one clone per consumer connection
                     break
+
+    def _copy_hierarchy_metadata(
+        self,
+        dup_node,
+        successors,
+        model: ModelWrapper,
+        output_tensor: str
+    ) -> bool:
+        """Copy PyTorch hierarchy metadata from consumers to DuplicateStreams node.
+
+        For MLO loop rolling, nodes need pkg.torch.onnx.name_scopes and
+        pkg.torch.onnx.class_hierarchy metadata to be included in FINNLoop bodies.
+
+        Infrastructure kernels inherit from consumers (not producers) because:
+        - Consumers define where the duplicated data is needed
+        - Validates all consumers in same hierarchy (no cross-loop fanout)
+        - More robust than producer (which may be optimized away)
+
+        Args:
+            dup_node: DuplicateStreams ONNX node to annotate
+            successors: Consumer nodes
+            model: ModelWrapper
+            output_tensor: Tensor being duplicated
+
+        Returns:
+            True if metadata was copied, False otherwise
+        """
+        METADATA_KEYS = ["pkg.torch.onnx.name_scopes", "pkg.torch.onnx.class_hierarchy"]
+
+        # Collect metadata from all consumers
+        consumer_metadata = []
+        for consumer in successors:
+            consumer_meta = {}
+            for prop in consumer.metadata_props:
+                if prop.key in METADATA_KEYS:
+                    consumer_meta[prop.key] = prop.value
+            if consumer_meta:
+                consumer_metadata.append(consumer_meta)
+
+        # No metadata found in any consumer
+        if not consumer_metadata:
+            # Fall back to producer
+            producer = model.find_producer(output_tensor)
+            if producer:
+                for prop in producer.metadata_props:
+                    if prop.key in METADATA_KEYS:
+                        # Use StringStringEntryProto for metadata_props
+                        new_prop = StringStringEntryProto(key=prop.key, value=prop.value)
+                        dup_node.metadata_props.append(new_prop)
+                return len([p for p in producer.metadata_props if p.key in METADATA_KEYS]) > 0
+            return False
+
+        # For loop rolling, what matters is the common prefix, not exact match
+        # E.g., "encoder.layer.0.attention.self.query" and "encoder.layer.0.attention.self.key"
+        # both belong to the same loop iteration (encoder.layer.0)
+
+        # Find longest common prefix for name_scopes
+        name_scopes_list = []
+        for meta in consumer_metadata:
+            scope_str = meta.get("pkg.torch.onnx.name_scopes", "")
+            # Parse as list (format: ['encoder', 'encoder.layer.0', ...])
+            try:
+                import ast
+                scope_list = ast.literal_eval(scope_str)
+                name_scopes_list.append(scope_list)
+            except:
+                # If parsing fails, treat as incompatible
+                name_scopes_list.append([])
+
+        # Find common prefix across all consumers
+        if name_scopes_list and all(name_scopes_list):
+            common_prefix = name_scopes_list[0]
+            for scopes in name_scopes_list[1:]:
+                # Find longest common prefix
+                common_prefix = [
+                    common_prefix[i]
+                    for i in range(min(len(common_prefix), len(scopes)))
+                    if i < len(scopes) and common_prefix[i] == scopes[i]
+                ]
+
+            # Use common prefix as the hierarchy for DuplicateStreams
+            if common_prefix:
+                # Reconstruct metadata using common prefix
+                common_hierarchy_str = str(common_prefix)
+
+                # Get class hierarchy from first consumer (should be same at prefix level)
+                class_hierarchy = consumer_metadata[0].get("pkg.torch.onnx.class_hierarchy", "")
+
+                new_prop = StringStringEntryProto(
+                    key="pkg.torch.onnx.name_scopes",
+                    value=common_hierarchy_str
+                )
+                dup_node.metadata_props.append(new_prop)
+
+                if class_hierarchy:
+                    new_prop = StringStringEntryProto(
+                        key="pkg.torch.onnx.class_hierarchy",
+                        value=class_hierarchy
+                    )
+                    dup_node.metadata_props.append(new_prop)
+
+                logger.debug(
+                    f"DuplicateStreams for {output_tensor}: using common prefix {common_prefix}"
+                )
+                return True
+
+        # Fallback: use first consumer's full metadata
+        reference_metadata = consumer_metadata[0]
+        for key, value in reference_metadata.items():
+            new_prop = StringStringEntryProto(key=key, value=value)
+            dup_node.metadata_props.append(new_prop)
+
+        return True

@@ -10,18 +10,22 @@ clock_ns: 5.0                       # Target clock period in nanoseconds
 design_space:
   kernels: []
   steps:
-    - "cleanup"  # custom_step_cleanup
-    - "qonnx_to_finn"
-    # REQUIRED: Layout normalization must run before kernel inference
-    # All Brainsmith kernels assume NHWC (channel-last) layout for dataflow.
-    # This step converts any NCHW tensors to NHWC globally, eliminating the
-    # need for per-kernel layout checking and ensuring uniform dataflow behavior.
-    - "normalize_dataflow_layouts"
-    - "build_dataflow_graph" # Build complete dataflow graph (infrastructure + computational kernels)
-    - "create_dataflow_partition"
-    - "specialize_layers"
-    - "target_fps_parallelization"
-    - "apply_folding_config"
+    # <-- Your topology cleanup steps should go here -->
+    - "finn_topology_cleanup"          # Standard graph cleanup expected by FINN
+    - "import_qonnx_quantization"      # Process quantization metadata from QONNX
+    # <-- Your topology optimization steps should go here -->
+    - "finn:streamline"
+    - "normalize_dataflow_layouts"         # Normalize tensors to NHWC layout
+    ########## Core Brainsmith Steps ##########
+    - "infer_computational_kernels"        # Infer pattern-based kernels (MVAU, LayerNorm, etc.)
+    - "insert_infrastructure_kernels"      # Insert topology-based kernels (DuplicateStreams, etc.)
+    - "specialize_kernel_backends"         # Select HLS/RTL backends + create dataflow partition
+
+
+
+    - "brainsmith:target_fps_parallelization"
+    - "apply_parallelization_config"
+
     - "minimize_bit_width"
     - "generate_estimate_reports"
     - "hw_codegen"

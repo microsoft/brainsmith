@@ -31,8 +31,10 @@ from functools import reduce
 from math import gcd
 from typing import TYPE_CHECKING, Any
 
+from onnx import NodeProto
 from qonnx.core.datatype import BaseDataType
 from qonnx.core.modelwrapper import ModelWrapper
+from qonnx.util.basic import get_by_name
 
 from brainsmith._internal.math import divisors
 
@@ -57,20 +59,16 @@ class BuildContext:
     Attributes:
         schema: KernelSchema defining structure
         model_w: ModelWrapper for ONNX graph access
-        node_inputs: ONNX node input tensor names
-        node_outputs: ONNX node output tensor names
+        node: ONNX NodeProto (provides .input, .output, .name)
         param_getter: Function to retrieve nodeattr values
         param_setter: Function to store nodeattr values
-        node_name: Node name for error messages
     """
 
     schema: KernelSchema
     model_w: ModelWrapper
-    node_inputs: list[str]
-    node_outputs: list[str]
+    node: NodeProto
     param_getter: Callable[[str], Any]
     param_setter: Callable[[str, Any], None]
-    node_name: str = "<unknown>"
 
 
 class DesignSpaceBuilder:
@@ -85,11 +83,9 @@ class DesignSpaceBuilder:
         >>> context = BuildContext(
         ...     schema=kernel_schema,
         ...     model_w=model_wrapper,
-        ...     node_inputs=list(node.input),
-        ...     node_outputs=list(node.output),
+        ...     node=node,
         ...     param_getter=self.get_nodeattr,
         ...     param_setter=self.set_nodeattr,
-        ...     node_name=node.name
         ... )
         >>> design_space = builder.build(context)
         >>> point = design_space.configure({"SIMD": 64, "PE": 1})
@@ -195,12 +191,12 @@ class DesignSpaceBuilder:
         self._ctx = ctx
         self._interfaces: dict[str, Any] = {}
 
-        logger.debug(f"Building KernelDesignSpace for {ctx.node_name}")
+        logger.debug(f"Building KernelDesignSpace for {ctx.node.name}")
 
         # Build input interfaces from ONNX graph
         inputs: dict[str, InterfaceDesignSpace] = {}
 
-        for i, inp_name in enumerate(ctx.node_inputs):
+        for i, inp_name in enumerate(ctx.node.input):
             if not inp_name:
                 continue
 
@@ -248,7 +244,7 @@ class DesignSpaceBuilder:
         # Build output interfaces (may derive datatypes from inputs)
         outputs: dict[str, InterfaceDesignSpace] = {}
 
-        for i, out_name in enumerate(ctx.node_outputs):
+        for i, out_name in enumerate(ctx.node.output):
             if i >= len(ctx.schema.outputs):
                 logger.warning(
                     f"Node has output {i} but schema only defines {len(ctx.schema.outputs)} outputs"
@@ -294,7 +290,7 @@ class DesignSpaceBuilder:
                 if (e := c.check(validation_ctx))
             ]
             if failed:
-                raise ValueError(f"{ctx.node_name} validation failed:\n" + "\n".join(failed))
+                raise ValueError(f"{ctx.node.name} validation failed:\n" + "\n".join(failed))
 
             logger.debug(f"  All {len(structural_constraints)} structural constraints passed")
 
@@ -317,7 +313,7 @@ class DesignSpaceBuilder:
             parameters=all_dimensions,
         )
 
-        logger.debug(f"KernelDesignSpace built successfully for {ctx.node_name}")
+        logger.debug(f"KernelDesignSpace built successfully for {ctx.node.name}")
         return design_space
 
     def _resolve_datatype(
@@ -696,8 +692,42 @@ class DesignSpaceBuilder:
                 f"{ordered_count} ordered, {discrete_count} discrete"
             )
 
-        # Combine tiling + DSE dimensions
-        all_dimensions = {**tiling_dimensions, **dse_dimensions}
+        # Generate input<idx>MemType parameters from mem_modes
+        mem_mode_dimensions = {}
+        for idx, inp in enumerate(schema.inputs):
+            if inp.mem_modes is None:
+                continue
+
+            param_name = f"input{idx}MemType"
+
+            # Check if InferKernel marked this input as a weight
+            # Attribute presence indicates weight; absence indicates pure streaming input
+            attr = get_by_name(self._ctx.node.attribute, param_name)
+            if attr is None:
+                # Not a weight - skip parameter creation
+                logger.debug(f"Skipping {param_name}: not marked as weight by InferKernel")
+                continue
+
+            values = inp.mem_modes
+
+            # Support callable for context-aware filtering (e.g., MLO)
+            if callable(values):
+                values = values(self._ctx)
+
+            # Ensure frozenset for discrete parameter
+            if not isinstance(values, frozenset):
+                values = frozenset(values)
+
+            mem_mode_dimensions[param_name] = values
+
+        if mem_mode_dimensions:
+            logger.debug(
+                f"Added {len(mem_mode_dimensions)} mem_mode dimensions: "
+                + ", ".join(f"{k}={v}" for k, v in mem_mode_dimensions.items())
+            )
+
+        # Combine tiling + DSE + mem_mode dimensions
+        all_dimensions = {**tiling_dimensions, **dse_dimensions, **mem_mode_dimensions}
 
         return all_dimensions
 

@@ -206,7 +206,7 @@ class KernelTestBase(ABC):
 
         Args:
             model: Model after inference transform
-            target_node: Original ONNX node name
+            target_node: Original ONNX node name (may have been renamed during transformation)
             expected_type: Expected kernel class or op_type string (optional)
 
         Returns:
@@ -215,8 +215,31 @@ class KernelTestBase(ABC):
         Raises:
             AssertionError: If node not found or wrong type
         """
-        # Get ONNX node from model
+        # Try to get ONNX node by name (may fail with new sequential naming)
         onnx_node = model.get_node_from_name(target_node)
+
+        # If not found by exact name, search by kernel type
+        # (needed for new sequential naming scheme: KernelName_<index>)
+        if onnx_node is None:
+            kernel_op = self.get_kernel_op()
+            kernel_name = kernel_op.__name__  # e.g., "Thresholding"
+
+            # Find all nodes with matching op_type and brainsmith domain
+            hw_nodes = [
+                node for node in model.graph.node
+                if node.op_type == kernel_name and node.domain == "brainsmith.kernels"
+            ]
+
+            # For test models with single kernel instance, take the first one
+            assert len(hw_nodes) > 0, (
+                f"Could not find transformed kernel node. "
+                f"Original node: {target_node}, Expected kernel: {kernel_name}"
+            )
+            assert len(hw_nodes) == 1, (
+                f"Found multiple {kernel_name} nodes: {[n.name for n in hw_nodes]}. "
+                f"Cannot determine which corresponds to {target_node}"
+            )
+            onnx_node = hw_nodes[0]
 
         # Wrap with custom op class (pass model for KernelOp initialization)
         op = getHWCustomOp(onnx_node, model)
@@ -255,7 +278,22 @@ class KernelTestBase(ABC):
         Returns:
             Expected outputs from QONNX execution
         """
-        return execute_onnx(quant_model, inputs, return_full_exec_context=False)
+        from qonnx.core.datatype import DataType
+
+        outputs = execute_onnx(quant_model, inputs, return_full_exec_context=False)
+
+        # Post-process BIPOLAR outputs
+        # QONNX MultiThreshold returns {0, 1} but BIPOLAR datatype represents {-1, 1}
+        # Apply the same conversion as hardware Thresholding kernels
+        graph = quant_model.graph
+        for node in graph.node:
+            for output_name in node.output:
+                if output_name in outputs:
+                    output_dtype = quant_model.get_tensor_datatype(output_name)
+                    if output_dtype == DataType["BIPOLAR"]:
+                        outputs[output_name] = 2 * outputs[output_name] - 1
+
+        return outputs
 
     def _build_stage1_model(self, kernel_test_config: "KernelTestConfig") -> ModelWrapper:
         """Build Stage 1 model with QONNX annotations.

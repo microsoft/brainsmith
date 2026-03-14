@@ -510,3 +510,71 @@ def max_datatype(
 ) -> Callable[[dict, Callable, Any, str], "BaseDataType"]:
     """Compute max() output datatype (context-aware)."""
     return _binary_op_datatype(a_interface, b_interface, compute_max_range)
+
+
+def threshold_datatype(input_interface: str) -> Callable[[dict, Callable, Any, str], "BaseDataType"]:
+    """Compute threshold datatype with ceil() rounding accommodation (FINN-compatible).
+
+    Implements FINN's RoundAndClipThresholds algorithm:
+    1. Thresholds undergo ceil() rounding: ceil(127.1) = 128
+    2. Clipped to [input.min, input.max + 1]
+    3. Therefore threshold dtype must accommodate input.max + 1
+
+    Mathematical rationale:
+    - Thresholds divide input domain into quantization bins
+    - After ceil(), highest threshold can reach input.max + 1
+    - This value represents the supremum (least upper bound) of input domain
+    - For INT8 input (-128 to 127), thresholds need INT9 to hold 128
+
+    Args:
+        input_interface: Name of input interface (e.g., "input")
+
+    Returns:
+        Callable that resolves threshold datatype from input dtype
+
+    Example:
+        # In Thresholding schema
+        df.InputSchema(
+            name="thresholds",
+            datatype=threshold_datatype("input"),  # Accommodates ceil() rounding
+        )
+
+        # Result: INT8 input → INT9 thresholds (to hold value 128)
+    """
+
+    def resolver(
+        interfaces: dict[str, Any],
+        param_getter: Callable,
+        model: Any,  # ModelWrapper
+        tensor_name: str,
+    ) -> "BaseDataType":
+        """Resolve threshold datatype with ceil() accommodation."""
+        from qonnx.core.datatype import DataType
+
+        if input_interface not in interfaces:
+            available = list(interfaces.keys())
+            raise ValueError(
+                f"Interface '{input_interface}' not found for threshold datatype. "
+                f"Available: {', '.join(available)}"
+            )
+
+        input_dt = interfaces[input_interface].datatype
+
+        # Skip optimization for float inputs (keep as-is)
+        if not input_dt.is_integer():
+            return model.get_tensor_datatype(tensor_name) if model else input_dt
+
+        # Accommodate ceil() rounding: thresholds can reach input.max + 1
+        # This is the supremum of the input domain
+        max_val = input_dt.max() + 1
+
+        # Find smallest dtype that can hold the ceil-rounded range
+        if input_dt.signed():
+            # For signed inputs: range is [input.min, input.max+1]
+            # Use get_smallest_possible with negative bound for signed dtype selection
+            return smallest_datatype_for_range(-max_val - 1, max_val)
+        else:
+            # For unsigned inputs: range is [0, input.max+1]
+            return smallest_datatype_for_range(0, max_val)
+
+    return resolver

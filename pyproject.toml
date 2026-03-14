@@ -159,6 +159,8 @@ ml-dtypes = "~=0.5.3"
 torch = "~=2.7.0"
 torchvision = "~=0.22.0"  # Required by finn/brevitas
 transformers = "~=4.48.3"
+datasets = "~=3.0.0"
+evaluate = "~=0.4.0"
 
 # ONNX ecosystem
 onnx = "~=1.17.0"
@@ -172,7 +174,7 @@ netron = "~=8.6"
 ipython = "~=8.12.2"
 ipykernel = "~=6.21.2"
 pygments = ">=2.16,<3.0"  # Updated for mkdocs-material compatibility
-tqdm = "~=4.64.1"
+tqdm = "~=4.66.3"
 
 # Hardware and optimization
 bitstring = "~=4.2.3"

@@ -864,21 +864,36 @@ class SetParallelization(Transformation):
         model = model.transform(AnnotateCycles())
 
         # Two-pass relaxation: run again with achievable target if needed
+        # Skip if there are unspecialized nodes (e.g., Shuffle) that will be decomposed later
         if self.two_pass_relaxation:
-            perf_dict = model.analysis(dataflow_performance)
-            if perf_dict["max_cycles"] > self.target_cycles_per_frame:
-                # Target not achievable, run second pass with achievable target
+            # Check for abstract/unspecialized nodes that aren't HLS/RTL yet
+            has_unspecialized = any(
+                node.op_type == "Shuffle" or
+                (hasattr(node, 'domain') and node.domain == "finn.custom_op.fpgadataflow.fpgadataflow")
+                for node in model.graph.node
+            )
+
+            if has_unspecialized:
                 warnings.warn(
-                    f"Node {perf_dict['max_cycles_node_name']} is bottleneck with "
-                    f"{perf_dict['max_cycles']} cycles, running second pass"
+                    "Skipping two-pass relaxation: model contains unspecialized nodes (e.g., Shuffle) "
+                    "that will be decomposed by transpose_decomposition. Parallelization will be "
+                    "refined after decomposition if needed."
                 )
-                model = model.transform(
-                    SetParallelization(
-                        target_cycles_per_frame=perf_dict["max_cycles"],
-                        mvau_wwidth_max=self.mvau_wwidth_max,
-                        two_pass_relaxation=False,  # Prevent infinite recursion
+            else:
+                perf_dict = model.analysis(dataflow_performance)
+                if perf_dict["max_cycles"] > self.target_cycles_per_frame:
+                    # Target not achievable, run second pass with achievable target
+                    warnings.warn(
+                        f"Node {perf_dict['max_cycles_node_name']} is bottleneck with "
+                        f"{perf_dict['max_cycles']} cycles, running second pass"
                     )
-                )
+                    model = model.transform(
+                        SetParallelization(
+                            target_cycles_per_frame=perf_dict["max_cycles"],
+                            mvau_wwidth_max=self.mvau_wwidth_max,
+                            two_pass_relaxation=False,  # Prevent infinite recursion
+                        )
+                    )
 
         return (model, False)
 

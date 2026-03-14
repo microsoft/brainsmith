@@ -25,7 +25,7 @@ design_space:
     - at_start:
         insert:
           # Core brainsmith step:
-          - "bert_cleanup"           # brainsmith.steps.bert_custom_steps
+          - "bert_cleanup"           # brainsmith.steps.bert_steps
           # Local example steps (from custom_steps.py):
           - "remove_head"            # Remove model head up to first LayerNorm
           - "remove_tail"            # Remove model tail after second output
@@ -33,4 +33,4 @@ design_space:
 
     - at_end:
         # Core brainsmith step:
-        insert: "shell_metadata_handover"  # brainsmith.steps.bert_custom_steps
+        insert: "shell_metadata_handover"  # brainsmith.steps.bert_steps
