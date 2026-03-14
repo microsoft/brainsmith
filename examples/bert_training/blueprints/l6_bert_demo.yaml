@@ -13,19 +13,22 @@ save_intermediate_models: true      # Save intermediate ONNX models
 # Direct override FINN configuration options
 finn_config:
   loop_body_hierarchy: [
-    ['bert', 'bert.encoder', 'bert.encoder.layer.0']
+   ['bert', 'bert.encoder', 'bert.encoder.layer.0']
   ]
   standalone_thresholds: true
-  folding_config_file: "${BSMITH_DIR}/examples/bert_training/initial_folding.json"
+  folding_config_file: "${BSMITH_DIR}/examples/bert_training/configs/mlo_high_folding.json"
   split_large_fifos: true
   auto_fifo_depths: true
   fifosim_n_inferences: 2         # Speed up FIFO sizing
+  mlo: true
   stitched_ip_gen_dcp: true
   verify_steps:
-    - "stitched_ip_rtlsim"
+    - "finn_onnx_python"
+  #  - "node_by_node_rtlsim"
   #verify_save_rtlsim_waveforms: true #This is really big
   verify_save_full_context: true
   verification_atol: 0.1
+  preserve_thresh_shape: true
 
 design_space:
   # Inherit kernels from parent blueprint

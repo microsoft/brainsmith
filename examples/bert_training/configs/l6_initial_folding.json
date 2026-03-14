@@ -1,0 +1,216 @@
+{
+  "Defaults": {},
+
+  "ElementwiseAdd_hls_0": {
+    "PE": 2
+  },
+  "ElementwiseAdd_hls_1": {
+    "PE": 2
+  },
+  "ElementwiseMul_hls_0": {
+    "PE": 2
+  },
+  "ElementwiseMul_hls_1": {
+    "PE": 2
+  },
+  "ElementwiseMul_hls_2": {
+    "PE": 2
+  },
+  "Thresholding_rtl_0": {
+    "PE": 2
+  },
+  "Thresholding_rtl_1": {
+    "PE": 2
+  },
+  "Thresholding_rtl_2": {
+    "PE": 2
+  },
+  "Crop_hls_0": {
+    "simd": 4
+  },
+  "MVAU_rtl_0": {
+    "PE": 2,
+    "SIMD": 4
+  },
+  "MVAU_rtl_1": {
+    "PE": 2,
+    "SIMD": 4
+  },
+
+
+
+  "FINNLoop_0_ElementwiseAdd_hls_0": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseAdd_hls_1": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseAdd_hls_2": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseAdd_hls_3": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseAdd_hls_4": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseAdd_hls_5": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseAdd_hls_6": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseAdd_hls_7": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseAdd_hls_8": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseAdd_hls_9": {
+    "PE": 2
+  },
+
+
+
+  "FINNLoop_0_ElementwiseMul_hls_0": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseMul_hls_1": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseMul_hls_2": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseMul_hls_3": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseMul_hls_4": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseMul_hls_5": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseMul_hls_6": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseMul_hls_7": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseMul_hls_8": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseMul_hls_9": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseMul_hls_10": {
+    "PE": 2
+  },
+  "FINNLoop_0_ElementwiseMul_hls_11": {
+    "PE": 2
+  },
+
+
+  "FINNLoop_0_Shuffle_0": {
+    "SIMD": 4
+  },
+  "FINNLoop_0_Shuffle_1": {
+    "SIMD": 4
+  },
+  "FINNLoop_0_Shuffle_2": {
+    "SIMD": 4
+  },
+  "FINNLoop_0_Shuffle_3": {
+    "SIMD": 4
+  },
+
+  "FINNLoop_0_HWSoftmax_hls_0": {
+    "SIMD": 4
+  },
+
+  "FINNLoop_0_MVAU_rtl_0": {
+    "PE": 2,
+    "SIMD": 4
+  },
+  "FINNLoop_0_MVAU_rtl_1": {
+    "PE": 2,
+    "SIMD": 4
+  },
+  "FINNLoop_0_MVAU_rtl_2": {
+    "PE": 2,
+    "SIMD": 4
+  },
+  "FINNLoop_0_MVAU_rtl_3": {
+    "PE": 2,
+    "SIMD": 4
+  },
+  "FINNLoop_0_MVAU_rtl_4": {
+    "PE": 2,
+    "SIMD": 4
+  },
+  "FINNLoop_0_MVAU_rtl_5": {
+    "PE": 2,
+    "SIMD": 4
+  },
+  "FINNLoop_0_MVAU_rtl_6": {
+    "PE": 2,
+    "SIMD": 4
+  },
+  "FINNLoop_0_MVAU_rtl_6": {
+    "PE": 2,
+    "SIMD": 4
+  },
+  "FINNLoop_0_MVAU_rtl_7": {
+    "PE": 2,
+    "SIMD": 4
+  },
+
+
+  "FINNLoop_0_Thresholding_rtl_0": {
+    "PE": 2
+  },
+  "FINNLoop_0_Thresholding_rtl_1": {
+    "PE": 2
+  },
+  "FINNLoop_0_Thresholding_rtl_2": {
+    "PE": 2
+  },
+  "FINNLoop_0_Thresholding_rtl_3": {
+    "PE": 2
+  },
+  "FINNLoop_0_Thresholding_rtl_4": {
+    "PE": 2
+  },
+  "FINNLoop_0_Thresholding_rtl_5": {
+    "PE": 2
+  },
+  "FINNLoop_0_Thresholding_rtl_6": {
+    "PE": 2
+  },
+  "FINNLoop_0_Thresholding_rtl_7": {
+    "PE": 2
+  },
+  "FINNLoop_0_Thresholding_rtl_8": {
+    "PE": 2
+  },
+
+
+  "FINNLoop_0_LayerNorm_rtl_0": {
+    "SIMD": 2
+  },
+  "FINNLoop_0_LayerNorm_rtl_1": {
+    "SIMD": 2
+  },
+
+
+  "FINNLoop_0_DuplicateStreams_hls_0": {
+    "PE": 4
+  },
+  "FINNLoop_0_DuplicateStreams_hls_1": {
+    "PE": 4
+  },
+  "FINNLoop_0_DuplicateStreams_hls_2": {
+    "PE": 4
+  }
+
+
+}

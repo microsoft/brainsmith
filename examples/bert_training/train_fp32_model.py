@@ -6,7 +6,7 @@ Train FP32 TinyBERT Classification Model and Export to Clean ONNX
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from transformers import BertTokenizer, BertConfig, BertForSequenceClassification
+from transformers import BertTokenizer, BertForSequenceClassification
 from datasets import load_dataset
 import numpy as np
 import onnx
@@ -15,116 +15,7 @@ import argparse
 import os
 from tqdm import tqdm
 
-
-def create_tinybert_config():
-    """Create TinyBERT configuration"""
-    config = BertConfig(
-        vocab_size=30522,
-        hidden_size=384,
-        num_hidden_layers=6,
-        num_attention_heads=12,
-        intermediate_size=1536,
-        hidden_act="relu",
-        num_labels=2
-    )
-    return config
-
-
-def load_and_preprocess_data(tokenizer, max_length=128):
-    """Load and preprocess SST-2 dataset"""
-    print("Loading SST-2 dataset...")
-    dataset = load_dataset("glue", "sst2")
-    
-    def tokenize_data(examples):
-        return tokenizer(
-            examples['sentence'],
-            truncation=True,
-            padding='max_length',
-            max_length=max_length
-        )
-    
-    # Tokenize datasets
-    train_dataset = dataset['train'].map(tokenize_data, batched=True)
-    val_dataset = dataset['validation'].map(tokenize_data, batched=True)
-    
-    # Set format for PyTorch
-    train_dataset.set_format(type='torch', columns=['input_ids', 'label'])
-    val_dataset.set_format(type='torch', columns=['input_ids', 'label'])
-    
-    return train_dataset, val_dataset
-
-
-def train_model(model, train_loader, val_loader, device, epochs=3):
-    """Train the model"""
-    optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5)
-    criterion = nn.CrossEntropyLoss()
-    
-    model.to(device)
-    best_val_acc = 0
-    
-    for epoch in range(epochs):
-        # Training
-        model.train()
-        total_loss = 0
-        correct = 0
-        total = 0
-        
-        print(f"\nEpoch {epoch+1}/{epochs}")
-        train_pbar = tqdm(train_loader, desc="Training")
-        
-        for batch in train_pbar:
-            input_ids = batch['input_ids'].to(device)
-            labels = batch['label'].to(device)
-            
-            optimizer.zero_grad()
-            outputs = model(input_ids)
-            loss = criterion(outputs.logits, labels)
-            loss.backward()
-            optimizer.step()
-            
-            total_loss += loss.item()
-            _, predicted = torch.max(outputs.logits.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-            
-            train_pbar.set_postfix({
-                'loss': f'{loss.item():.4f}',
-                'acc': f'{100.*correct/total:.2f}%'
-            })
-        
-        train_acc = 100. * correct / total
-        
-        # Validation
-        model.eval()
-        val_correct = 0
-        val_total = 0
-        val_loss = 0
-        
-        with torch.no_grad():
-            for batch in tqdm(val_loader, desc="Validation"):
-                input_ids = batch['input_ids'].to(device)
-                labels = batch['label'].to(device)
-                
-                outputs = model(input_ids)
-                loss = criterion(outputs.logits, labels)
-                val_loss += loss.item()
-                
-                _, predicted = torch.max(outputs.logits.data, 1)
-                val_total += labels.size(0)
-                val_correct += (predicted == labels).sum().item()
-        
-        val_acc = 100. * val_correct / val_total
-        
-        print(f"Epoch {epoch+1}: Train Acc: {train_acc:.2f}%, Val Acc: {val_acc:.2f}%")
-        
-        # Save best model
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            torch.save(model.state_dict(), 'best_fp32_model.pth')
-            print(f"New best model saved with validation accuracy: {val_acc:.2f}%")
-    
-    return best_val_acc
-
+from utils import create_tinybert_config, fetch_dataloader, validate_model, train_model
 
 def export_to_onnx(model, tokenizer, output_path, max_length=128):
     """Export model to clean ONNX format"""
@@ -164,14 +55,16 @@ def export_to_onnx(model, tokenizer, output_path, max_length=128):
 
 def main():
     parser = argparse.ArgumentParser(description='Train FP32 TinyBERT and Export to ONNX')
-    parser.add_argument('--epochs', type=int, default=3, help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
-    parser.add_argument('--max_length', type=int, default=128, help='Maximum sequence length')
-    parser.add_argument('--output', default='fp32_model.onnx', help='Output ONNX path')
+    parser.add_argument('--epochs', type=int, default=3, help='Number of training epochs (default: %(default)s)')
+    parser.add_argument('--batch_size', type=int, default=32, help='Batch size (default: %(default)s)')
+    parser.add_argument('--max_length', type=int, default=128, help='Maximum sequence length (default: %(default)s)')
+    parser.add_argument('--max_num_samples', type=int, default=None, help='Crop the training / validation set to a maximum number of samples. None=no cropping. (default: %(default)s)')
+    parser.add_argument('--output', default='fp32_model.onnx', help='Output ONNX path (default: %(default)s)')
     
     args = parser.parse_args()
     
     # Setup
+    torch.manual_seed(0)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
@@ -184,16 +77,14 @@ def main():
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
     
     # Load data
-    train_dataset, val_dataset = load_and_preprocess_data(tokenizer, args.max_length)
+    train_loader = fetch_dataloader(tokenizer, num_samples=args.max_num_samples, max_length=args.max_length, split="train", batch_size=args.batch_size)
+    val_loader = fetch_dataloader(tokenizer, num_samples=args.max_num_samples, max_length=args.max_length, split="validation", batch_size=args.batch_size)
     
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
-    
-    print(f"Training samples: {len(train_dataset)}")
-    print(f"Validation samples: {len(val_dataset)}")
+    print(f"Training samples: {len(train_loader.dataset)}")
+    print(f"Validation samples: {len(val_loader.dataset)}")
     
     # Train model
-    best_acc = train_model(model, train_loader, val_loader, device, args.epochs)
+    best_acc = train_model(model, train_loader, val_loader, device, args.epochs, output_file='best_fp32_model.pth')
     
     # Load best model for export
     model.load_state_dict(torch.load('best_fp32_model.pth'))
