@@ -77,7 +77,7 @@ fi
 
 # Define our Git dependencies - URLs and revisions
 declare -A GIT_DEPS=(
-    ["brevitas"]="https://github.com/Xilinx/brevitas.git@c10ef8764967e9cacc60347ce185be14e4ad97c4"
+    ["brevitas"]="https://github.com/Xilinx/brevitas.git@b106358c4169d8a9b68cb2a531aa795417d74887"
     ["qonnx"]="https://github.com/fastmachinelearning/qonnx.git@custom/brainsmith"
     ["finn"]="https://github.com/tafk7/finn.git@feature/mlo-merge"
     ["finn-experimental"]="https://github.com/Xilinx/finn-experimental.git@0724be21111a21f0d81a072fccc1c446e053f851"
