@@ -313,6 +313,7 @@ FINN_BACKENDS = [
     ('OuterShuffle_hls', f'{FK}.hls.outer_shuffle_hls.OuterShuffle_hls', 'OuterShuffle_hls', 'hls'),
     # RTL Backends
     ('ConvolutionInputGenerator_rtl', f'{FK}.rtl.convolutioninputgenerator_rtl.ConvolutionInputGenerator_rtl', 'ConvolutionInputGenerator', 'rtl'),
+    ('ElementwiseBinary_rtl', f'{FK}.rtl.elementwise_binary_rtl.ElementwiseBinary_rtl', 'ElementwiseBinaryOperation', 'rtl'),
     ('FMPadding_rtl', f'{FK}.rtl.fmpadding_rtl.FMPadding_rtl', 'FMPadding', 'rtl'),
     ('LayerNorm_rtl', f'{FK}.rtl.layernorm_rtl.LayerNorm_rtl', 'LayerNorm', 'rtl'),
     ('MVAU_rtl', f'{FK}.rtl.matrixvectoractivation_rtl.MVAU_rtl', 'MVAU', 'rtl'),
