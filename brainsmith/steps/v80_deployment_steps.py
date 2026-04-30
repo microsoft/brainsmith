@@ -185,7 +185,7 @@ def v80_deployment_build(model: Any, cfg: Any) -> Any:
 
     # Get configuration options
     build_hw = getattr(cfg, 'v80_build_hw', True)
-    build_sw = getattr(cfg, 'v80_build_sw', False)
+    build_sw = getattr(cfg, 'v80_build_sw', True)
     clock_mhz = getattr(cfg, 'v80_clock_mhz', 250)
     compile_cores = getattr(cfg, 'v80_compile_cores', 4)
 
