@@ -79,6 +79,27 @@ def _check_vivado_available() -> bool:
     return _check_tool_available('vivado')
 
 
+def _get_torch_cmake_prefix() -> Optional[str]:
+    """Get the CMake prefix path for PyTorch/LibTorch.
+
+    Returns the path to PyTorch's CMake config files, or None if PyTorch
+    is not installed or doesn't provide cmake_prefix_path.
+    """
+    try:
+        import torch
+        if hasattr(torch.utils, 'cmake_prefix_path'):
+            cmake_path = torch.utils.cmake_prefix_path
+            if cmake_path and Path(cmake_path).exists():
+                logger.debug(f"Found PyTorch CMake prefix: {cmake_path}")
+                return cmake_path
+    except ImportError:
+        logger.debug("PyTorch not installed, cmake_prefix_path not available")
+    except Exception as e:
+        logger.debug(f"Could not get PyTorch cmake_prefix_path: {e}")
+
+    return None
+
+
 def _run_cmake_build(
     build_dir: Path,
     target: str,
@@ -225,6 +246,18 @@ def v80_deployment_build(model: Any, cfg: Any) -> Any:
         f'-DBUILD_PY={"ON" if build_sw else "OFF"}',
         '-DBUILD_SW=OFF',  # C++ runtime not needed for Python workflow
     ]
+
+    # Add PyTorch CMake prefix path if building Python bindings
+    if build_sw:
+        torch_cmake_prefix = _get_torch_cmake_prefix()
+        if torch_cmake_prefix:
+            cmake_cmd.append(f'-DCMAKE_PREFIX_PATH={torch_cmake_prefix}')
+            logger.info(f"Using PyTorch CMake prefix: {torch_cmake_prefix}")
+        else:
+            logger.warning(
+                "PyTorch cmake_prefix_path not found. If CMake fails to find Torch, "
+                "install PyTorch or set CMAKE_PREFIX_PATH manually."
+            )
 
     logger.info(f"CMake command: {' '.join(cmake_cmd)}")
 
