@@ -144,35 +144,17 @@ def _run_cmake_build(
             log_handle.close()
 
 
-@step(
-    name="v80_deployment_build",
-    category="shell",
-    dependencies=["shell_metadata_handover"],
-    description="Build V80 shell and generate deployment artifacts"
-)
-def v80_deployment_build(model: Any, cfg: Any) -> Any:
-    """
-    Build the V80 shell from stitched IP.
+def _setup_v80_build_environment(cfg: Any) -> tuple:
+    """Common setup for V80 build steps.
 
-    This step:
-    1. Configures CMake with the stitched IP path
-    2. Runs hw_project -> hw_synth -> hw_compile
-    3. Optionally builds sw_python (Python bindings)
-    4. Collects outputs into deployment folder
-
-    Configuration options (from cfg):
-        - v80_build_hw: bool (default True) - build hardware
-        - v80_build_sw: bool (default True) - build Python bindings
-        - v80_clock_mhz: int (default 250) - clock frequency
-        - v80_compile_cores: int (default 4) - parallel compilation
-        - v80_shell_dir: str (optional) - path to V80 shell sources
+    Returns:
+        Tuple of (stitched_ip_dir, handover_file, v80_shell_dir, build_dir, deploy_dir, log_dir)
     """
     from finn.builder.build_dataflow_config import DataflowOutputType
 
     # Check prerequisites
     if DataflowOutputType.STITCHED_IP not in cfg.generate_outputs:
-        logger.warning("Skipping v80_deployment_build: STITCHED_IP not in generate_outputs")
-        return model
+        return None
 
     stitched_ip_dir = (Path(cfg.output_dir) / 'stitched_ip').resolve()
     if not stitched_ip_dir.exists():
@@ -199,17 +181,6 @@ def v80_deployment_build(model: Any, cfg: Any) -> Any:
             "Make not found. Install with: apt-get install build-essential"
         )
 
-    if not _check_vivado_available():
-        raise RuntimeError(
-            "Vivado not found. Ensure Vivado is in PATH or XILINX_VIVADO is set."
-        )
-
-    # Get configuration options
-    build_hw = getattr(cfg, 'v80_build_hw', True)
-    build_sw = getattr(cfg, 'v80_build_sw', True)
-    clock_mhz = getattr(cfg, 'v80_clock_mhz', 250)
-    compile_cores = getattr(cfg, 'v80_compile_cores', 4)
-
     # Locate V80 shell sources
     v80_shell_dir = _find_v80_shell_dir(cfg)
     logger.info(f"Using V80 shell source: {v80_shell_dir}")
@@ -232,7 +203,28 @@ def v80_deployment_build(model: Any, cfg: Any) -> Any:
     log_dir = deploy_dir / 'logs'
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # === Step 1: CMake Configure ===
+    return stitched_ip_dir, handover_file, v80_shell_dir, build_dir, deploy_dir, log_dir
+
+
+def _run_cmake_configure(
+    cfg: Any,
+    stitched_ip_dir: Path,
+    v80_shell_dir: Path,
+    build_dir: Path,
+    log_dir: Path,
+    build_hw: bool = True,
+    build_sw: bool = True
+) -> None:
+    """Run CMake configure if not already done or if options changed."""
+    clock_mhz = getattr(cfg, 'v80_clock_mhz', 250)
+    compile_cores = getattr(cfg, 'v80_compile_cores', 4)
+
+    # Check if CMake was already configured (Makefile exists)
+    makefile = build_dir / 'Makefile'
+    if makefile.exists():
+        logger.info("CMake already configured, skipping configure step")
+        return
+
     logger.info("Configuring V80 deployment build...")
     cmake_cmd = [
         'cmake',
@@ -266,100 +258,175 @@ def v80_deployment_build(model: Any, cfg: Any) -> Any:
     with open(cmake_log, 'w') as f:
         result = subprocess.run(
             cmake_cmd,
-            cwd=cfg.output_dir,  # Use output_dir, not build_dir (avoids nested directory)
+            cwd=cfg.output_dir,
             stdout=f,
             stderr=subprocess.STDOUT,
             text=True
         )
 
     if result.returncode != 0:
-        with open(cmake_log, 'r') as f:
-            error_output = f.read()
         logger.error(f"CMake configure failed. See {cmake_log}")
         raise RuntimeError(f"CMake configure failed. Check {cmake_log} for details.")
 
     logger.info("CMake configuration complete")
 
-    # === Step 2: Hardware Build ===
-    if build_hw:
-        # hw_project
-        logger.info("Creating Vivado project (hw_project)...")
-        ret = _run_cmake_build(
-            build_dir, 'hw_project',
-            cores=1,  # Project creation is not parallelizable
-            log_file=log_dir / 'hw_project.log'
+
+@step(
+    name="v80_hw_build",
+    category="shell",
+    dependencies=["shell_metadata_handover"],
+    description="Build V80 hardware (synthesis and implementation)"
+)
+def v80_hw_build(model: Any, cfg: Any) -> Any:
+    """
+    Build the V80 hardware from stitched IP.
+
+    This step:
+    1. Configures CMake with the stitched IP path (if not already done)
+    2. Runs hw_project -> hw_synth -> hw_compile
+    3. Collects hardware outputs into deployment folder
+
+    Configuration options (from cfg):
+        - v80_clock_mhz: int (default 250) - clock frequency
+        - v80_compile_cores: int (default 4) - parallel compilation
+        - v80_shell_dir: str (optional) - path to V80 shell sources
+    """
+    # Check Vivado is available for hardware build
+    if not _check_vivado_available():
+        raise RuntimeError(
+            "Vivado not found. Ensure Vivado is in PATH or XILINX_VIVADO is set."
         )
-        if ret != 0:
-            raise RuntimeError(f"hw_project failed. Check {log_dir}/hw_project.log")
 
-        # hw_synth
-        logger.info("Running synthesis (hw_synth)...")
-        ret = _run_cmake_build(
-            build_dir, 'hw_synth',
-            cores=compile_cores,
-            log_file=log_dir / 'hw_synth.log'
-        )
-        if ret != 0:
-            raise RuntimeError(f"hw_synth failed. Check {log_dir}/hw_synth.log")
+    # Setup build environment
+    env = _setup_v80_build_environment(cfg)
+    if env is None:
+        logger.warning("Skipping v80_hw_build: STITCHED_IP not in generate_outputs")
+        return model
 
-        # hw_compile
-        # Use single core for implementation to avoid PLM "Bad file descriptor" issue
-        logger.info("Running implementation (hw_compile)...")
-        ret = _run_cmake_build(
-            build_dir, 'hw_compile',
-            cores=1,
-            log_file=log_dir / 'hw_compile.log'
-        )
-        if ret != 0:
-            raise RuntimeError(f"hw_compile failed. Check {log_dir}/hw_compile.log")
+    stitched_ip_dir, handover_file, v80_shell_dir, build_dir, deploy_dir, log_dir = env
+    compile_cores = getattr(cfg, 'v80_compile_cores', 4)
 
-        logger.info("Hardware build complete")
+    # Run CMake configure if needed
+    _run_cmake_configure(cfg, stitched_ip_dir, v80_shell_dir, build_dir, log_dir,
+                         build_hw=True, build_sw=False)
 
-    # === Step 3: Software Build ===
-    if build_sw:
-        logger.info("Building Python bindings (sw_python)...")
-        ret = _run_cmake_build(
-            build_dir, 'sw_python',
-            cores=compile_cores,
-            log_file=log_dir / 'sw_python.log'
-        )
-        if ret != 0:
-            raise RuntimeError(f"sw_python failed. Check {log_dir}/sw_python.log")
+    # === Hardware Build ===
+    # hw_project
+    logger.info("Creating Vivado project (hw_project)...")
+    ret = _run_cmake_build(
+        build_dir, 'hw_project',
+        cores=1,  # Project creation is not parallelizable
+        log_file=log_dir / 'hw_project.log'
+    )
+    if ret != 0:
+        raise RuntimeError(f"hw_project failed. Check {log_dir}/hw_project.log")
 
-        logger.info("Python bindings build complete")
+    # hw_synth
+    logger.info("Running synthesis (hw_synth)...")
+    ret = _run_cmake_build(
+        build_dir, 'hw_synth',
+        cores=compile_cores,
+        log_file=log_dir / 'hw_synth.log'
+    )
+    if ret != 0:
+        raise RuntimeError(f"hw_synth failed. Check {log_dir}/hw_synth.log")
 
-    # === Step 4: Collect Deployment Artifacts ===
-    logger.info("Collecting deployment artifacts...")
+    # hw_compile
+    # Use single core for implementation to avoid PLM "Bad file descriptor" issue
+    logger.info("Running implementation (hw_compile)...")
+    ret = _run_cmake_build(
+        build_dir, 'hw_compile',
+        cores=1,
+        log_file=log_dir / 'hw_compile.log'
+    )
+    if ret != 0:
+        raise RuntimeError(f"hw_compile failed. Check {log_dir}/hw_compile.log")
 
+    logger.info("Hardware build complete")
+
+    # === Collect Hardware Artifacts ===
     hw_root = build_dir / 'hw'
-    sw_root = build_dir / 'sw'
 
     # Bitstreams
-    if build_hw:
-        bitstream_src = hw_root / 'bitstreams'
-        bitstream_dst = deploy_dir / 'bitstreams'
-        if bitstream_src.exists():
-            shutil.copytree(bitstream_src, bitstream_dst, dirs_exist_ok=True)
-            logger.info(f"Copied bitstreams to {bitstream_dst}")
-        else:
-            logger.warning(f"Bitstream directory not found: {bitstream_src}")
+    bitstream_src = hw_root / 'bitstreams'
+    bitstream_dst = deploy_dir / 'bitstreams'
+    if bitstream_src.exists():
+        shutil.copytree(bitstream_src, bitstream_dst, dirs_exist_ok=True)
+        logger.info(f"Copied bitstreams to {bitstream_dst}")
+    else:
+        logger.warning(f"Bitstream directory not found: {bitstream_src}")
 
-        # Reports
-        report_src = hw_root / 'reports'
-        report_dst = deploy_dir / 'reports'
-        if report_src.exists():
-            shutil.copytree(report_src, report_dst, dirs_exist_ok=True)
-            logger.info(f"Copied reports to {report_dst}")
+    # Reports
+    report_src = hw_root / 'reports'
+    report_dst = deploy_dir / 'reports'
+    if report_src.exists():
+        shutil.copytree(report_src, report_dst, dirs_exist_ok=True)
+        logger.info(f"Copied reports to {report_dst}")
+
+    # Copy shell_handover.json for reference
+    shutil.copy2(handover_file, deploy_dir / 'shell_handover.json')
+
+    logger.info(f"Hardware artifacts collected in {deploy_dir}")
+
+    return model
+
+
+@step(
+    name="v80_sw_build",
+    category="shell",
+    dependencies=["shell_metadata_handover"],
+    description="Build V80 software (Python bindings)"
+)
+def v80_sw_build(model: Any, cfg: Any) -> Any:
+    """
+    Build the V80 Python bindings from stitched IP.
+
+    This step:
+    1. Configures CMake with the stitched IP path (if not already done)
+    2. Builds sw_python (Python bindings)
+    3. Collects software outputs into deployment folder
+
+    Configuration options (from cfg):
+        - v80_clock_mhz: int (default 250) - clock frequency
+        - v80_compile_cores: int (default 4) - parallel compilation
+        - v80_shell_dir: str (optional) - path to V80 shell sources
+    """
+    # Setup build environment
+    env = _setup_v80_build_environment(cfg)
+    if env is None:
+        logger.warning("Skipping v80_sw_build: STITCHED_IP not in generate_outputs")
+        return model
+
+    stitched_ip_dir, handover_file, v80_shell_dir, build_dir, deploy_dir, log_dir = env
+    compile_cores = getattr(cfg, 'v80_compile_cores', 4)
+
+    # Run CMake configure if needed
+    _run_cmake_configure(cfg, stitched_ip_dir, v80_shell_dir, build_dir, log_dir,
+                         build_hw=False, build_sw=True)
+
+    # === Software Build ===
+    logger.info("Building Python bindings (sw_python)...")
+    ret = _run_cmake_build(
+        build_dir, 'sw_python',
+        cores=compile_cores,
+        log_file=log_dir / 'sw_python.log'
+    )
+    if ret != 0:
+        raise RuntimeError(f"sw_python failed. Check {log_dir}/sw_python.log")
+
+    logger.info("Python bindings build complete")
+
+    # === Collect Software Artifacts ===
+    sw_root = build_dir / 'sw'
 
     # Python module
-    if build_sw:
-        python_src = sw_root / 'python'
-        python_dst = deploy_dir / 'python'
-        if python_src.exists():
-            shutil.copytree(python_src, python_dst, dirs_exist_ok=True)
-            logger.info(f"Copied Python module to {python_dst}")
-        else:
-            logger.warning(f"Python module directory not found: {python_src}")
+    python_src = sw_root / 'python'
+    python_dst = deploy_dir / 'python'
+    if python_src.exists():
+        shutil.copytree(python_src, python_dst, dirs_exist_ok=True)
+        logger.info(f"Copied Python module to {python_dst}")
+    else:
+        logger.warning(f"Python module directory not found: {python_src}")
 
     # Config files
     config_src = sw_root / 'export' / 'config'
@@ -375,12 +442,16 @@ def v80_deployment_build(model: Any, cfg: Any) -> Any:
         shutil.copytree(ref_src, ref_dst, dirs_exist_ok=True)
         logger.info(f"Copied reference files to {ref_dst}")
 
-    # Copy shell_handover.json for reference
-    shutil.copy2(handover_file, deploy_dir / 'shell_handover.json')
+    # Copy shell_handover.json for reference (if not already copied by hw_build)
+    handover_dst = deploy_dir / 'shell_handover.json'
+    if not handover_dst.exists():
+        shutil.copy2(handover_file, handover_dst)
 
-    logger.info(f"Deployment artifacts collected in {deploy_dir}")
+    logger.info(f"Software artifacts collected in {deploy_dir}")
 
     # Store deployment path in model metadata
     model.set_metadata_prop("v80_deployment_dir", str(deploy_dir))
 
     return model
+
+

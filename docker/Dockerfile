@@ -39,6 +39,7 @@ RUN apt-get update && \
     libjansson-dev \
     libgetdata-dev \
     libtinfo5 \
+    libaio-dev \
     g++-10
 RUN echo "StrictHostKeyChecking no" >> /etc/ssh/ssh_config
 RUN locale-gen "en_US.UTF-8"
