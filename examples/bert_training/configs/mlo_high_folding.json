@@ -87,7 +87,7 @@
     "SIMD": 4
   },
 
-  "FINNLoop_0_HWSoftmax_hls_0": {
+  "FINNLoop_0_HWSoftmax_rtl_0": {
     "SIMD": 4
   },
 
