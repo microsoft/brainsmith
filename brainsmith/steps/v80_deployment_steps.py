@@ -86,14 +86,13 @@ def _get_torch_cmake_prefix() -> Optional[str]:
     is not installed or doesn't provide cmake_prefix_path.
     """
     try:
-        import torch
-        if hasattr(torch.utils, 'cmake_prefix_path'):
-            cmake_path = torch.utils.cmake_prefix_path
-            if cmake_path and Path(cmake_path).exists():
-                logger.debug(f"Found PyTorch CMake prefix: {cmake_path}")
-                return cmake_path
+        from torch.utils import cmake_prefix_path
+        cmake_path = cmake_prefix_path
+        if cmake_path and Path(cmake_path).exists():
+            logger.debug(f"Found PyTorch CMake prefix: {cmake_path}")
+            return cmake_path
     except ImportError:
-        logger.debug("PyTorch not installed, cmake_prefix_path not available")
+        logger.debug("PyTorch not installed or cmake_prefix_path not available")
     except Exception as e:
         logger.debug(f"Could not get PyTorch cmake_prefix_path: {e}")
 
@@ -212,10 +211,8 @@ def _run_cmake_configure(
     v80_shell_dir: Path,
     build_dir: Path,
     log_dir: Path,
-    build_hw: bool = True,
-    build_sw: bool = True
 ) -> None:
-    """Run CMake configure if not already done or if options changed."""
+    """Run CMake configure if not already done."""
     clock_mhz = getattr(cfg, 'v80_clock_mhz', 250)
     compile_cores = getattr(cfg, 'v80_compile_cores', 4)
 
@@ -234,24 +231,39 @@ def _run_cmake_configure(
         f'-DBWAVE_DIR={v80_shell_dir}',
         f'-DACLK_F={clock_mhz}',
         f'-DCOMP_CORES={compile_cores}',
-        f'-DBUILD_HW={"ON" if build_hw else "OFF"}',
-        f'-DBUILD_PY={"ON" if build_sw else "OFF"}',
+        '-DBUILD_HW=ON',
+        '-DBUILD_PY=ON',  # Always enable so both hw and sw targets are available
         '-DBUILD_SW=OFF',  # C++ runtime not needed for Python workflow
     ]
 
-    # Add PyTorch CMake prefix path if building Python bindings
-    if build_sw:
-        torch_cmake_prefix = _get_torch_cmake_prefix()
-        if torch_cmake_prefix:
-            cmake_cmd.append(f'-DCMAKE_PREFIX_PATH={torch_cmake_prefix}')
-            logger.info(f"Using PyTorch CMake prefix: {torch_cmake_prefix}")
-        else:
-            logger.warning(
-                "PyTorch cmake_prefix_path not found. If CMake fails to find Torch, "
-                "install PyTorch or set CMAKE_PREFIX_PATH manually."
-            )
+    # Add PyTorch CMake prefix path for Python bindings
+    torch_cmake_prefix = _get_torch_cmake_prefix()
+    if not torch_cmake_prefix:
+        # Fallback to common location
+        fallback_path = Path('/usr/local/lib/python3.10/dist-packages/torch/share/cmake')
+        if fallback_path.exists():
+            torch_cmake_prefix = str(fallback_path)
+            logger.info(f"Using fallback PyTorch CMake prefix: {torch_cmake_prefix}")
+    if torch_cmake_prefix:
+        cmake_cmd.append(f'-DCMAKE_PREFIX_PATH={torch_cmake_prefix}')
+        logger.info(f"Using PyTorch CMake prefix: {torch_cmake_prefix}")
+    else:
+        logger.warning(
+            "PyTorch cmake_prefix_path not found. If CMake fails to find Torch, "
+            "install PyTorch or set CMAKE_PREFIX_PATH manually."
+        )
 
     logger.info(f"CMake command: {' '.join(cmake_cmd)}")
+
+    # Build environment with CMAKE_PREFIX_PATH for Torch
+    cmake_env = os.environ.copy()
+    if torch_cmake_prefix:
+        existing_prefix = cmake_env.get('CMAKE_PREFIX_PATH', '')
+        if existing_prefix:
+            cmake_env['CMAKE_PREFIX_PATH'] = f"{torch_cmake_prefix}:{existing_prefix}"
+        else:
+            cmake_env['CMAKE_PREFIX_PATH'] = torch_cmake_prefix
+        logger.info(f"Setting CMAKE_PREFIX_PATH={cmake_env['CMAKE_PREFIX_PATH']}")
 
     # Write CMake configure log
     cmake_log = log_dir / 'cmake_configure.log'
@@ -261,7 +273,8 @@ def _run_cmake_configure(
             cwd=cfg.output_dir,
             stdout=f,
             stderr=subprocess.STDOUT,
-            text=True
+            text=True,
+            env=cmake_env
         )
 
     if result.returncode != 0:
@@ -307,8 +320,7 @@ def v80_hw_build(model: Any, cfg: Any) -> Any:
     compile_cores = getattr(cfg, 'v80_compile_cores', 4)
 
     # Run CMake configure if needed
-    _run_cmake_configure(cfg, stitched_ip_dir, v80_shell_dir, build_dir, log_dir,
-                         build_hw=True, build_sw=False)
+    _run_cmake_configure(cfg, stitched_ip_dir, v80_shell_dir, build_dir, log_dir)
 
     # === Hardware Build ===
     # hw_project
@@ -401,8 +413,7 @@ def v80_sw_build(model: Any, cfg: Any) -> Any:
     compile_cores = getattr(cfg, 'v80_compile_cores', 4)
 
     # Run CMake configure if needed
-    _run_cmake_configure(cfg, stitched_ip_dir, v80_shell_dir, build_dir, log_dir,
-                         build_hw=False, build_sw=True)
+    _run_cmake_configure(cfg, stitched_ip_dir, v80_shell_dir, build_dir, log_dir)
 
     # === Software Build ===
     logger.info("Building Python bindings (sw_python)...")
