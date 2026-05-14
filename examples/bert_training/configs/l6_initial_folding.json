@@ -1,19 +1,19 @@
 {
   "Defaults": {},
 
-  "ElementwiseAdd_hls_0": {
+  "ElementwiseAdd_rtl_0": {
     "PE": 2
   },
-  "ElementwiseAdd_hls_1": {
+  "ElementwiseAdd_rtl_1": {
     "PE": 2
   },
-  "ElementwiseMul_hls_0": {
+  "ElementwiseMul_rtl_0": {
     "PE": 2
   },
-  "ElementwiseMul_hls_1": {
+  "ElementwiseMul_rtl_1": {
     "PE": 2
   },
-  "ElementwiseMul_hls_2": {
+  "ElementwiseMul_rtl_2": {
     "PE": 2
   },
   "Thresholding_rtl_0": {
@@ -39,73 +39,73 @@
 
 
 
-  "FINNLoop_0_ElementwiseAdd_hls_0": {
+  "FINNLoop_0_ElementwiseAdd_rtl_0": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseAdd_hls_1": {
+  "FINNLoop_0_ElementwiseAdd_rtl_1": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseAdd_hls_2": {
+  "FINNLoop_0_ElementwiseAdd_rtl_2": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseAdd_hls_3": {
+  "FINNLoop_0_ElementwiseAdd_rtl_3": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseAdd_hls_4": {
+  "FINNLoop_0_ElementwiseAdd_rtl_4": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseAdd_hls_5": {
+  "FINNLoop_0_ElementwiseAdd_rtl_5": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseAdd_hls_6": {
+  "FINNLoop_0_ElementwiseAdd_rtl_6": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseAdd_hls_7": {
+  "FINNLoop_0_ElementwiseAdd_rtl_7": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseAdd_hls_8": {
+  "FINNLoop_0_ElementwiseAdd_rtl_8": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseAdd_hls_9": {
+  "FINNLoop_0_ElementwiseAdd_rtl_9": {
     "PE": 2
   },
 
 
 
-  "FINNLoop_0_ElementwiseMul_hls_0": {
+  "FINNLoop_0_ElementwiseMul_rtl_0": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseMul_hls_1": {
+  "FINNLoop_0_ElementwiseMul_rtl_1": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseMul_hls_2": {
+  "FINNLoop_0_ElementwiseMul_rtl_2": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseMul_hls_3": {
+  "FINNLoop_0_ElementwiseMul_rtl_3": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseMul_hls_4": {
+  "FINNLoop_0_ElementwiseMul_rtl_4": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseMul_hls_5": {
+  "FINNLoop_0_ElementwiseMul_rtl_5": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseMul_hls_6": {
+  "FINNLoop_0_ElementwiseMul_rtl_6": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseMul_hls_7": {
+  "FINNLoop_0_ElementwiseMul_rtl_7": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseMul_hls_8": {
+  "FINNLoop_0_ElementwiseMul_rtl_8": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseMul_hls_9": {
+  "FINNLoop_0_ElementwiseMul_rtl_9": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseMul_hls_10": {
+  "FINNLoop_0_ElementwiseMul_rtl_10": {
     "PE": 2
   },
-  "FINNLoop_0_ElementwiseMul_hls_11": {
+  "FINNLoop_0_ElementwiseMul_rtl_11": {
     "PE": 2
   },
 
@@ -123,7 +123,7 @@
     "SIMD": 4
   },
 
-  "FINNLoop_0_HWSoftmax_hls_0": {
+  "FINNLoop_0_HWSoftmax_rtl_0": {
     "SIMD": 4
   },
 

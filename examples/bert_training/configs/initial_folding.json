@@ -1,88 +1,88 @@
 {
   "Defaults": {},
 
-  "ElementwiseAdd_hls_0": {
+  "ElementwiseAdd_rtl_0": {
     "PE": 2
   },
-  "ElementwiseAdd_hls_1": {
+  "ElementwiseAdd_rtl_1": {
     "PE": 2
   },
-  "ElementwiseAdd_hls_2": {
+  "ElementwiseAdd_rtl_2": {
     "PE": 2
   },
-  "ElementwiseAdd_hls_3": {
+  "ElementwiseAdd_rtl_3": {
     "PE": 2
   },
-  "ElementwiseAdd_hls_4": {
+  "ElementwiseAdd_rtl_4": {
     "PE": 2
   },
-  "ElementwiseAdd_hls_5": {
+  "ElementwiseAdd_rtl_5": {
     "PE": 2
   },
-  "ElementwiseAdd_hls_6": {
+  "ElementwiseAdd_rtl_6": {
     "PE": 2
   },
-  "ElementwiseAdd_hls_7": {
+  "ElementwiseAdd_rtl_7": {
     "PE": 2
   },
-  "ElementwiseAdd_hls_8": {
+  "ElementwiseAdd_rtl_8": {
     "PE": 2
   },
-  "ElementwiseAdd_hls_9": {
+  "ElementwiseAdd_rtl_9": {
     "PE": 2
   },
-  "ElementwiseAdd_hls_10": {
+  "ElementwiseAdd_rtl_10": {
     "PE": 2
   },
-  "ElementwiseAdd_hls_11": {
+  "ElementwiseAdd_rtl_11": {
     "PE": 2
   },
 
 
 
-  "ElementwiseMul_hls_0": {
+  "ElementwiseMul_rtl_0": {
     "PE": 2
   },
-  "ElementwiseMul_hls_1": {
+  "ElementwiseMul_rtl_1": {
     "PE": 2
   },
-  "ElementwiseMul_hls_2": {
+  "ElementwiseMul_rtl_2": {
     "PE": 2
   },
-  "ElementwiseMul_hls_3": {
+  "ElementwiseMul_rtl_3": {
     "PE": 2
   },
-  "ElementwiseMul_hls_4": {
+  "ElementwiseMul_rtl_4": {
     "PE": 2
   },
-  "ElementwiseMul_hls_5": {
+  "ElementwiseMul_rtl_5": {
     "PE": 2
   },
-  "ElementwiseMul_hls_6": {
+  "ElementwiseMul_rtl_6": {
     "PE": 2
   },
-  "ElementwiseMul_hls_7": {
+  "ElementwiseMul_rtl_7": {
     "PE": 2
   },
-  "ElementwiseMul_hls_8": {
+  "ElementwiseMul_rtl_8": {
     "PE": 2
   },
-  "ElementwiseMul_hls_9": {
+  "ElementwiseMul_rtl_9": {
     "PE": 2
   },
-  "ElementwiseMul_hls_10": {
+  "ElementwiseMul_rtl_10": {
     "PE": 2
   },
-  "ElementwiseMul_hls_11": {
+  "ElementwiseMul_rtl_11": {
     "PE": 2
   },
-  "ElementwiseMul_hls_12": {
+  "ElementwiseMul_rtl_12": {
     "PE": 2
   },
-  "ElementwiseMul_hls_13": {
+  "ElementwiseMul_rtl_13": {
     "PE": 2
   },
-  "ElementwiseMul_hls_14": {
+  "ElementwiseMul_rtl_14": {
     "PE": 2
   },
 
@@ -100,7 +100,7 @@
     "SIMD": 4
   },
 
-  "HWSoftmax_hls_0": {
+  "HWSoftmax_rtl_0": {
     "SIMD": 4
   },
 
@@ -193,10 +193,10 @@
   },
 
 
-  "LayerNorm_hls_0": {
+  "LayerNorm_rtl_0": {
     "SIMD": 2
   },
-  "LayerNorm_hls_1": {
+  "LayerNorm_rtl_1": {
     "SIMD": 2
   },
 
