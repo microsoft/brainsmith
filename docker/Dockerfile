@@ -10,6 +10,7 @@ LABEL maintainer="Thomas Keller <thomaskeller@microsoft.com>, Mahdi Ghandi <Mahd
 RUN apt-get update && \
     apt-get install -y \
     build-essential \
+    cmake \
     libc6-dev-i386 \
     libglib2.0-0 \
     libsm6 \
@@ -38,9 +39,20 @@ RUN apt-get update && \
     libjansson-dev \
     libgetdata-dev \
     libtinfo5 \
+    libaio-dev \
     g++-10
 RUN echo "StrictHostKeyChecking no" >> /etc/ssh/ssh_config
 RUN locale-gen "en_US.UTF-8"
+
+# Install CUDA toolkit
+RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb && \
+    dpkg -i cuda-keyring_1.1-1_all.deb && \
+    apt-get update && \
+    apt-get install -y cuda-toolkit-12-4 && \
+    rm cuda-keyring_1.1-1_all.deb
+
+ENV PATH=/usr/local/cuda/bin:$PATH
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 # Install pip dependencies for Brainsmith
 COPY requirements.txt /tmp/

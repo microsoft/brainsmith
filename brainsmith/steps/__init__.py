@@ -21,3 +21,4 @@ All step functionality is available through the unified plugin system:
 from . import core_steps
 from . import bert_custom_steps
 from . import kernel_inference
+from . import v80_deployment_steps

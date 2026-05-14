@@ -12,6 +12,8 @@ save_intermediate_models: true      # Save intermediate ONNX models
 
 # Direct override FINN configuration options
 finn_config:
+  # Uncomment to resume from v80_deployment_build step:
+  # start_step: "v80_hw_build"
   loop_body_hierarchy: [
    ['bert', 'bert.encoder', 'bert.encoder.layer.0']
   ]
@@ -44,4 +46,7 @@ design_space:
           - "generate_reference_io"
 
     - at_end:
-        insert: "shell_metadata_handover"
+        insert:
+          - "shell_metadata_handover"
+          - "v80_hw_build"
+          - "v80_sw_build"
