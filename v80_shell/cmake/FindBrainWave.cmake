@@ -82,6 +82,9 @@ if(BUILD_HW)
   # Build optimizations (compilation)
   set(BUILD_OPT 0 CACHE STRING "Build optimizations.")
 
+  # Debug
+  set(EN_VIO_DEBUG OFF CACHE BOOL "Enable VIO debug core.")
+
   # Block design config
   set(BLOCK_DESIGN_CNFG "host" CACHE STRING "Block design config.")
 

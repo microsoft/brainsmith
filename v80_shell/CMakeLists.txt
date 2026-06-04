@@ -50,6 +50,9 @@ set(BUILD_HW ON  CACHE BOOL  "Build FPGA hardware")
 set(BUILD_SW OFF CACHE BOOL  "Build C++ runtime + main")
 set(BUILD_PY ON  CACHE BOOL  "Build Python bindings")
 
+# Debug options
+set(EN_VIO_DEBUG OFF CACHE BOOL "Enable VIO debug core")
+
 # Path to the core
 set(CORE_PATH 0 CACHE PATH "Core path")
 

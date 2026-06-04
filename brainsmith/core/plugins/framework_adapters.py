@@ -188,13 +188,10 @@ FINN_TRANSFORMS = [
     # Missing FPGA dataflow transforms - NOW COMPLETE
     ('CompileCppSim', f'{FT}.fpgadataflow.compile_cppsim.CompileCppSim'),
     ('CreateDataflowPartition', f'{FT}.fpgadataflow.create_dataflow_partition.CreateDataflowPartition'),
-    ('CreateVitisXO', f'{FT}.fpgadataflow.vitis_build.CreateVitisXO'),
     ('MakeCPPDriver', f'{FT}.fpgadataflow.make_driver.MakeCPPDriver'),
     ('MakePYNQDriver', f'{FT}.fpgadataflow.make_driver.MakePYNQDriver'),
     ('MakeZYNQProject', f'{FT}.fpgadataflow.make_zynq_proj.MakeZYNQProject'),
     ('SynthOutOfContext', f'{FT}.fpgadataflow.synth_ooc.SynthOutOfContext'),
-    ('VitisBuild', f'{FT}.fpgadataflow.vitis_build.VitisBuild'),
-    ('VitisLink', f'{FT}.fpgadataflow.vitis_build.VitisLink'),
     ('ZynqBuild', f'{FT}.fpgadataflow.make_zynq_proj.ZynqBuild'),
     ('ReplaceVerilogRelPaths', f'{FT}.fpgadataflow.replace_verilog_relpaths.ReplaceVerilogRelPaths'),
     ('DeriveCharacteristic', f'{FT}.fpgadataflow.derive_characteristic.DeriveCharacteristic'),

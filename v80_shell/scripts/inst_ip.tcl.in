@@ -188,15 +188,17 @@ set_property -dict [list \
   CONFIG.C_NUM_PERP_ARESETN {1} \
 ] [get_ips proc_sys_reset_lcl]
 
-# Debug
-create_ip -name axis_vio -vendor xilinx.com -library ip -version 1.0 -module_name vio_dbg
-set_property -dict [list \
-  CONFIG.C_EN_PROBE_IN_ACTIVITY {1} \
-  CONFIG.C_NUM_PROBE_IN {10} \
-  CONFIG.C_PROBE_IN2_WIDTH {32} \
-  CONFIG.C_PROBE_IN5_WIDTH {32} \
-  CONFIG.C_PROBE_IN6_WIDTH {32} \
-  CONFIG.C_PROBE_IN7_WIDTH {32} \
-  CONFIG.C_PROBE_IN8_WIDTH {32} \
-  CONFIG.C_PROBE_IN9_WIDTH {32} \
-] [get_ips vio_dbg]
+# Debug (optional VIO core)
+if {"${EN_VIO_DEBUG}" eq "ON" || "${EN_VIO_DEBUG}" eq "TRUE" || "${EN_VIO_DEBUG}" eq "1"} {
+  create_ip -name axis_vio -vendor xilinx.com -library ip -version 1.0 -module_name vio_dbg
+  set_property -dict [list \
+    CONFIG.C_EN_PROBE_IN_ACTIVITY {1} \
+    CONFIG.C_NUM_PROBE_IN {10} \
+    CONFIG.C_PROBE_IN2_WIDTH {32} \
+    CONFIG.C_PROBE_IN5_WIDTH {32} \
+    CONFIG.C_PROBE_IN6_WIDTH {32} \
+    CONFIG.C_PROBE_IN7_WIDTH {32} \
+    CONFIG.C_PROBE_IN8_WIDTH {32} \
+    CONFIG.C_PROBE_IN9_WIDTH {32} \
+  ] [get_ips vio_dbg]
+}

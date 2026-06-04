@@ -222,6 +222,9 @@ def _run_cmake_configure(
         logger.info("CMake already configured, skipping configure step")
         return
 
+    # Get optional debug configuration
+    en_vio_debug = getattr(cfg, 'v80_enable_vio_debug', False)
+
     logger.info("Configuring V80 deployment build...")
     cmake_cmd = [
         'cmake',
@@ -234,6 +237,7 @@ def _run_cmake_configure(
         '-DBUILD_HW=ON',
         '-DBUILD_PY=ON',  # Always enable so both hw and sw targets are available
         '-DBUILD_SW=OFF',  # C++ runtime not needed for Python workflow
+        f'-DEN_VIO_DEBUG={"ON" if en_vio_debug else "OFF"}',
     ]
 
     # Add PyTorch CMake prefix path for Python bindings
@@ -303,6 +307,7 @@ def v80_hw_build(model: Any, cfg: Any) -> Any:
         - v80_clock_mhz: int (default 250) - clock frequency
         - v80_compile_cores: int (default 4) - parallel compilation
         - v80_shell_dir: str (optional) - path to V80 shell sources
+        - v80_enable_vio_debug: bool (default False) - enable VIO debug core
     """
     # Check Vivado is available for hardware build
     if not _check_vivado_available():
