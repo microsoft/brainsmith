@@ -1,0 +1,15 @@
+# Brainsmith Configuration
+# Relative paths resolve to the directory containing the .brainsmith folder
+
+# Build output directory
+build_dir: build
+
+# Xilinx tools (adjust paths for your installation)
+xilinx_path: /tools/Xilinx
+xilinx_version: "2024.2"
+
+# Advanced options
+default_workers: 4
+netron_port: 8080
+components_strict: true
+vendor_platform_paths: /opt/xilinx/platforms

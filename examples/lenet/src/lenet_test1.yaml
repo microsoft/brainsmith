@@ -1,0 +1,69 @@
+name: "LeNet-5 test1"
+description: "LeNet-5 Model for input image with tensor format: [1, 1, 28, 28]"
+
+# Configuration overrides
+clock_ns: 20.0
+output: "rtl"  # Default: generates estimates only, will be changed later to 'rtl' and then to 'bitfile'
+board: "Pynq-Z1" # A Zynq-7000
+
+builder:
+  enable_build_pdb_debug: True
+
+finn_config:
+  # Quicktest-specific optimizations
+  target_fps: 2 
+  folding_config_file: "/home/kirthanar/brainsmith_projects/lenet/src/configs/lenet_folding_config_test13.json"  #folding for tests = (1, 5, 9, 13)
+  fifosim_n_inferences: 2           # Speed up FIFO sizing
+  verbose: true
+  auto_fifo_depths: false
+  split_large_fifos: false
+    #auto_fifo_strategy: characterize
+
+# Direct override FINN configuration options
+design_space:
+  kernels:
+    - finn:MVAU
+    - finn:Thresholding
+    - DuplicateStreams
+    - ElementwiseBinaryOp
+    - LayerNorm
+    - Softmax
+    - ConvolutionInputGenerator
+    - finn:AddStreams
+    - StreamingDataWidthConverter
+    - finn:Pool
+    - finn:GlobalAccPool
+    - finn:LabelSelect
+
+  steps:
+    # Preprocessing
+    - "qonnx_to_finn"
+    - "normalize_dataflow_layouts"
+    - "lenet_pre_dataflow_cleanup"
+    - "lenet_streamline"
+    - "lenet_clean_transposes_before_hw"
+    - "lenet_infer_hw_layers"
+    - "lenet_partition_sanity_check"
+    - "transpose_decomposition"
+    - "build_dataflow_graph"    # Infers and builds kernel graph (so no 'infer_kernels' to be mentioned seperately)
+    - "specialize_layers"
+    - "lenet_pre_partition_cleanup"
+    - "create_dataflow_partition"
+    - "specialize_layers"
+    # Kernel inferencing
+    - "build_hw_graph"           # Partitions and specializes backends  
+    # DSE generation and parallelization 
+    - "lenet_specialize_remaining_hw_layers" #step after which folding takes place
+    - "target_fps_parallelization" # brainsmith :
+    - "apply_parallelization_config"
+    - "apply_folding_config"
+    - "minimize_bit_width"
+    - "generate_estimate_reports" 
+      # Now after successfully generating the DSE for the encoder part of T5_small model, we try to execute the steps
+      # starting from 'hw_codegen' to 'measure_rtlsim_performance'
+      # HLS/RTL Generation
+    - "hw_codegen"
+    - "hw_ipgen"
+    - "set_fifo_depths"
+    - "create_stitched_ip"
+    - "measure_rtlsim_performance"

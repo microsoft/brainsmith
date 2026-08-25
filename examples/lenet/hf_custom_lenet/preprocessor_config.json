@@ -1,0 +1,25 @@
+{
+  "auto_map": {
+    "AutoImageProcessor": "grayscale.GrayScaleImageProcessorFast"
+  },
+  "crop_size": null,
+  "data_format": "channels_first",
+  "default_to_square": true,
+  "device": null,
+  "disable_grouping": null,
+  "do_center_crop": null,
+  "do_convert_rgb": null,
+  "do_normalize": null,
+  "do_pad": null,
+  "do_rescale": null,
+  "do_resize": null,
+  "image_mean": null,
+  "image_processor_type": "GrayScaleImageProcessorFast",
+  "image_std": null,
+  "input_data_format": null,
+  "pad_size": null,
+  "resample": null,
+  "rescale_factor": 0.00392156862745098,
+  "return_tensors": null,
+  "size": null
+}
