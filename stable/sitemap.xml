@@ -2,66 +2,66 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/404/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/getting-started/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/api/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/api/cli/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/api/dataflow/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/api/dse/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/api/registry/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/api/settings/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/developer-guide/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/developer-guide/blueprint-schema/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/developer-guide/dataflow-modeling/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/developer-guide/hardware-kernels/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/developer-guide/multi-layer-offload/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/developer-guide/registry/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/brainsmith/stable/tutorials/</loc>
-         <lastmod>2025-11-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
 </urlset>
