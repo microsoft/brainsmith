@@ -1,3 +1,22 @@
+# NOTE: DISABLED (renamed from pr-validation.yml). Do not re-enable until the following
+# security issues are resolved:
+#
+# 1. The review gate doesn't cover the code that executes. On pull_request_target, the
+#    composite actions (./.github/actions/workflow-setup and
+#    ./.github/actions/run-test-with-artifacts) are read from the pull request's own tree,
+#    which a fork author controls. The dependency-change check only diffs pyproject.toml
+#    and poetry.lock; a change under .github/actions/ raises no warning before the label
+#    is applied.
+# 2. A secret is in reach of that code. BSMITH_DOCKER_FLAGS passes XILINXD_LICENSE_FILE
+#    into the container with -e, so it is readable from the environment of whatever runs.
+# 3. Open question: is the pre-release runner ephemeral or a persistent self-hosted
+#    machine? On a persistent runner the exposure outlives the job.
+#
+# Durable fix: build PR code in an unprivileged pull_request job with contents: read and
+# no secrets, publish the result as an artifact, and have a separate privileged job consume
+# the artifact without checking out PR code.
+# Evidence: https://github.com/microsoft/brainsmith/blob/d260fb44fa0f348dd0078dc372e7d1c20d70200a/.github/workflows/pr-validation.yml#L40
+
 name: PR Validation
 
 on:
