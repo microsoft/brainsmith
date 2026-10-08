@@ -13,14 +13,14 @@
 │   ├── docker-exec/         # Command execution with container lifecycle
 │   └── workflow-setup/      # Standard initialization
 └── workflows/        # 3 focused workflows
-    ├── pr-validation.yml     # Pytest + BERT Quicktest (fail-fast)
+    ├── pr-validation.yml.disabled (DISABLED, see note at top of file)     # Pytest + BERT Quicktest (fail-fast)
     ├── biweekly-tests.yml    # BERT Large Model Test
     └── docs.yml              # Documentation deployment
 ```
 
 ## Workflows
 
-### PR Validation (`pr-validation.yml`)
+### PR Validation (`pr-validation.yml.disabled (DISABLED, see note at top of file)`)
 Fast validation for pull requests and develop branch pushes.
 
 **Triggers**: Push to `develop`, Pull Requests

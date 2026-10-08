@@ -1,3 +1,5 @@
+# NOTE: DISABLED (renamed from pr-validation.yml). Contact joshmonson@microsoft.com before re-enabling.
+
 name: PR Validation
 
 on:
